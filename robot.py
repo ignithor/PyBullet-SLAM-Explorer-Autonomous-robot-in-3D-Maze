@@ -34,6 +34,7 @@ class Robot:
         self.robot_id = self._load_robot_model()
         self.wheel_joints = self._find_wheel_joints()
         self.camera_setup = self._setup_camera_parameters()
+        self.LIDAR_MAX_RANGE = LIDAR_MAX_RANGE
 
         # Ensure the wheels are set up to be controllable by motors
         p.setJointMotorControlArray(self.robot_id, self.wheel_joints, p.VELOCITY_CONTROL, forces=[0, 0],

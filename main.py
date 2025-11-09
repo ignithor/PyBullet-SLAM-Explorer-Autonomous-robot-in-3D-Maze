@@ -1,6 +1,4 @@
 from simulation_manager import SimulationManager
-# Note: maze_generator, pybullet, numpy, and time are now imported 
-# within the SimulationManager or Robot classes as needed.
 
 # --- Main Execution ---
 if __name__ == "__main__":

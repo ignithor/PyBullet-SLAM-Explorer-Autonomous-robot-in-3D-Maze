@@ -112,23 +112,23 @@ class MazeGenerator:
             half_extents = [half_t, CELL_SIZE / 2.0 + half_t, WALL_HEIGHT / 2.0]
             walls.append(( [pos_x, pos_y, WALL_HEIGHT / 2.0], half_extents, [0, 0, 0, 1] ))
             
-        # --- Handle Start and End Openings ---
+        # # --- Handle Start and End Openings ---
         
-        # Start Opening (Robot starts at (0, 0) - Remove segment of the South/West wall)
-        # Let's open the wall segment at (0, 0) on the South side.
-        # Find the wall segment corresponding to the South boundary of cell (0, 0)
-        start_wall_x = CELL_SIZE / 2
-        start_wall_y = -half_t 
+        # # Start Opening (Robot starts at (0, 0) - Remove segment of the South/West wall)
+        # # Let's open the wall segment at (0, 0) on the South side.
+        # # Find the wall segment corresponding to the South boundary of cell (0, 0)
+        # start_wall_x = CELL_SIZE / 2
+        # start_wall_y = -half_t 
         
-        # Remove the wall at the start position
-        walls = [w for w in walls if not (np.allclose(w[0][:2], [start_wall_x, start_wall_y]) and w[1][1] == half_t)]
+        # # Remove the wall at the start position
+        # walls = [w for w in walls if not (np.allclose(w[0][:2], [start_wall_x, start_wall_y]) and w[1][1] == half_t)]
         
-        # End Opening (Target is typically at (size-1, size-1) - Remove segment of the North/East wall)
-        # Let's open the wall segment at (size-1, size-1) on the North side.
-        end_wall_x = (self.size - 1) * CELL_SIZE + CELL_SIZE / 2
-        end_wall_y = self.size * CELL_SIZE + half_t
+        # # End Opening (Target is typically at (size-1, size-1) - Remove segment of the North/East wall)
+        # # Let's open the wall segment at (size-1, size-1) on the North side.
+        # end_wall_x = (self.size - 1) * CELL_SIZE + CELL_SIZE / 2
+        # end_wall_y = self.size * CELL_SIZE + half_t
         
-        # Remove the wall at the end position
-        walls = [w for w in walls if not (np.allclose(w[0][:2], [end_wall_x, end_wall_y]) and w[1][1] == half_t)]
+        # # Remove the wall at the end position
+        # walls = [w for w in walls if not (np.allclose(w[0][:2], [end_wall_x, end_wall_y]) and w[1][1] == half_t)]
         
         return walls

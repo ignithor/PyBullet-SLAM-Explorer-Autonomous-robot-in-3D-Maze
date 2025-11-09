@@ -4,13 +4,13 @@ import pybullet as p
 import pybullet_data
 import numpy as np
 import time
+from control_module import ControlModule  # <-- 1. IMPORTED CONTROL MODULE
 
 # --- Physics Constants ---
-# Set restitution (bounciness) to zero and lateral friction high for stable contact
 WALL_RESTITUTION = 0.0
 WALL_FRICTION = 0.8
-SOLVER_ITERATIONS = 50  # Increased from 10 for better stability
-TIME_STEP = 1. / 480.0  # Increased frequency (480 Hz) for smoother collisions
+SOLVER_ITERATIONS = 50
+TIME_STEP = 1. / 480.0
 
 
 class SimulationManager:
@@ -20,17 +20,15 @@ class SimulationManager:
     """
 
     def __init__(self):
-        # 1. Initialize PyBullet (p.GUI for visualization, p.DIRECT for headless)
+        # 1. Initialize PyBullet
         self.client = p.connect(p.GUI)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -9.81)
 
-        # --- FIX 1: Enhanced Solver Parameters ---
+        # Set stable physics parameters
         p.setTimeStep(TIME_STEP)
         p.setPhysicsEngineParameter(numSolverIterations=SOLVER_ITERATIONS)
-        # ------------------------------------------
 
-        # Instance of the Robot class, not just the ID
         self.robot = None
 
         # 2. Instantiate and generate the logical maze
@@ -39,7 +37,7 @@ class SimulationManager:
 
         self._load_environment()
         self._load_robot()
-        self._setup_camera()
+        self._setup_camera() # Sets the initial camera view
 
     def _load_environment(self):
         """Loads the floor and 3D walls into the PyBullet environment."""
@@ -49,58 +47,49 @@ class SimulationManager:
         p.changeDynamics(plane_id, -1, restitution=WALL_RESTITUTION, lateralFriction=WALL_FRICTION,
                          physicsClientId=self.client)
 
-        # Load the walls as static rigid bodies (mass=0)
+        # Load the walls
         walls_to_build = self.maze_logic.get_walls_to_build()
-
         wall_color = [0.2, 0.2, 0.8, 1]  # Blue walls
 
         for pos, half_extents, orientation in walls_to_build:
-            # Create a Collision Shape (defines physical boundaries)
             collision_shape_id = p.createCollisionShape(shapeType=p.GEOM_BOX,
                                                         halfExtents=half_extents,
                                                         physicsClientId=self.client)
-            # Create a Visual Shape (defines appearance)
             visual_shape_id = p.createVisualShape(shapeType=p.GEOM_BOX,
                                                   halfExtents=half_extents,
                                                   rgbaColor=wall_color,
                                                   physicsClientId=self.client)
-
-            # Create the MultiBody (the actual object in the simulation)
+            
             wall_body_id = p.createMultiBody(baseMass=0,
-                                             baseCollisionShapeIndex=collision_shape_id,
-                                             baseVisualShapeIndex=visual_shape_id,
-                                             basePosition=pos,
-                                             baseOrientation=orientation,
-                                             physicsClientId=self.client)
+                                              baseCollisionShapeIndex=collision_shape_id,
+                                              baseVisualShapeIndex=visual_shape_id,
+                                              basePosition=pos,
+                                              baseOrientation=orientation,
+                                              physicsClientId=self.client)
 
-            # --- FIX 2: Set Wall Collision Dynamics ---
+            # Apply dynamics fix to walls
             p.changeDynamics(wall_body_id,
-                             linkIndex=-1,  # Target the base link
+                             linkIndex=-1,
                              restitution=WALL_RESTITUTION,
                              lateralFriction=WALL_FRICTION,
                              physicsClientId=self.client)
-            # ------------------------------------------
 
         print(f"INFO: Loaded {len(walls_to_build)} wall segments into PyBullet.")
 
     def _load_robot(self):
         """Initializes the Robot class instance and loads its model."""
-
-        # Determine start position based on maze cell size
         robot_start_pos = [CELL_SIZE / 2, CELL_SIZE / 2, 0.1]
-
-        # Instantiate the Robot class. It handles the actual PyBullet loading
-        # and should handle the robot's dynamics settings (base and wheels) internally.
         self.robot = Robot(self.client, start_pos=robot_start_pos)
-
         print(f"INFO: Robot loaded at position {robot_start_pos}.")
 
     def _setup_camera(self):
-        """Sets the camera to view the maze from above."""
-        # ... (unchanged camera code, but ensure it's a stable view) ...
+        """
+        Sets the camera to your original working view (45-degree angle).
+        """
         center_x = MAZE_SIZE * CELL_SIZE / 2
         center_y = MAZE_SIZE * CELL_SIZE / 2
 
+        # --- CAMERA REVERTED TO YOUR SETTINGS ---
         p.resetDebugVisualizerCamera(cameraDistance=MAZE_SIZE * CELL_SIZE * 0.8,
                                      cameraYaw=45,
                                      cameraPitch=-45,
@@ -110,24 +99,26 @@ class SimulationManager:
     def run_simulation(self):
         """
         Main simulation loop.
+        Drives the robot using ControlModule.
         """
+        
+        # --- 2. Initialize the Control Module ---
+        exploration_controller = ControlModule(self.robot)
+
         try:
-            left_speed = 5.0
-            right_speed = 6.0
-            duration_steps = 10 * int(1.0 / TIME_STEP)  # Use the new TIME_STEP for calculation
+            # Run for 300 seconds (5 minutes)
+            duration_steps = 300 * int(1.0 / TIME_STEP)
             step_count = 0
 
             while p.isConnected() and step_count < duration_steps:
-                # --- Control ---
-                self.robot.set_velocity(left_speed, right_speed)
-
-                # --- Perception (Placeholder for next phases) ---
-                lidar_ranges = self.robot.get_lidar_data()
-                camera_rgb = self.robot.get_camera_image()
+                
+                # --- 3. LET THE CONTROLLER DRIVE THE ROBOT ---
+                # The step() method reads sensors and sets velocity
+                exploration_controller.step()
 
                 # --- Step Physics ---
                 p.stepSimulation(physicsClientId=self.client)
-                time.sleep(TIME_STEP)  # Use the new TIME_STEP here
+                time.sleep(TIME_STEP)
                 step_count += 1
 
         except p.error:
@@ -135,4 +126,21 @@ class SimulationManager:
 
     def disconnect(self):
         """Cleanly disconnects the PyBullet client."""
-        p.disconnect(self.client)
+        if self.client is not None:
+            p.disconnect(self.client)
+
+# --- Main Execution (to allow running this file directly) ---
+if __name__ == "__main__":
+    print("--- Starting 3D Maze Robot Simulation ---")
+    sim = None
+    try:
+        sim = SimulationManager()
+        sim.run_simulation()
+
+    except Exception as e:
+        print(f"ERROR: An unexpected error occurred: {e}")
+        
+    finally:
+        if sim is not None:
+            sim.disconnect()
+            print("--- Simulation Ended and Disconnected ---")
