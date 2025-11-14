@@ -3,7 +3,7 @@ import numpy as np
 import random
 
 # --- Configuration Constants ---
-MAZE_SIZE = 15  # Grid size
+MAZE_SIZE = 5  # Grid size
 WALL_HEIGHT = 1.0  # Height of the 3D walls
 WALL_THICKNESS = 0.1  # Thickness of the walls
 CELL_SIZE = 2.5  # Width of a single corridor/cell
