@@ -1,196 +1,239 @@
 import pybullet as p
 import numpy as np
-import os  # Required for handling file paths
+import os
 
-# --- Configuration Constants for the Mobile Robot (Adjust as needed) ---
+# --- Robot Constants ---
+ROBOT_URDF_PATH = os.path.join(os.getcwd(), "urdf", "simple_two_wheel_car.urdf")
 
-# !!! CRITICAL: UPDATE THIS PATH !!!
-# You must adjust this path to point to the actual URDF file in your cloned repository.
-# Example assumption based on common repo structures:
-# If you cloned 'PybulletRobotics' into your project directory:
-ROBOT_URDF_PATH = os.path.join(os.getcwd(), 'urdf', 'simple_two_wheel_car.urdf')
-
-# Motor/Joint Configuration (MUST be verified against the URDF structure)
-# These indices are placeholders; check the URDF for the actual index numbers
-# of the Left and Right wheel joints.
 LEFT_WHEEL_JOINT_INDEX = 0
 RIGHT_WHEEL_JOINT_INDEX = 1
-MAX_MOTOR_FORCE = 50.0  # Force used in setJointMotorControl2
 
-# Sensor Constants (Can remain as is if you are satisfied with the simulation)
-LIDAR_MAX_RANGE = 5.0
+MAX_MOTOR_FORCE = 50.0
+
+# --- LiDAR Constants ---
 LIDAR_RAYS = 36
+LIDAR_RANGE = 5.0
+# Z height of the LiDAR (keep higher than wheel height)
+LIDAR_Z = 0.25
+# Start rays slightly outside robot body to avoid self-hit
+LIDAR_START_OFFSET = 0.20
+
+# --- Camera Constants ---
+CAMERA_WIDTH = 320  # Width in pixels
+CAMERA_HEIGHT = 240 # Height in pixels
+CAMERA_FOV = 60       # Field of View (degrees)
+CAMERA_ASPECT = CAMERA_WIDTH / CAMERA_HEIGHT
+CAMERA_NEAR = 0.1     # Near clip plane
+CAMERA_FAR = 10.0     # Far clip plane
+# Camera position relative to robot's center (base_link)
+CAMERA_X_OFFSET = 0.15  # Slightly in front
+CAMERA_Z_OFFSET = 0.3   # Above the LiDAR
 
 
 class Robot:
     """
-    Represents the external differential drive robot loaded via URDF.
-    Handles low-level control (velocity) and sensor simulation (LiDAR, Camera).
+    Robot class with LiDAR and Camera implementation.
     """
 
     def __init__(self, client_id, start_pos=[0.5, 0.5, 0.1]):
         self.client = client_id
         self.start_pos = start_pos
-        self.robot_id = self._load_robot_model()
-        self.wheel_joints = self._find_wheel_joints()
-        self.camera_setup = self._setup_camera_parameters()
-        self.LIDAR_MAX_RANGE = LIDAR_MAX_RANGE
 
-        # Ensure the wheels are set up to be controllable by motors
-        p.setJointMotorControlArray(self.robot_id, self.wheel_joints, p.VELOCITY_CONTROL, forces=[0, 0],
-                                    physicsClientId=self.client)
+        # Store debug lines so we can clear them each frame
+        # Initialize this first to prevent errors if init fails early
+        self.debug_lines = []
 
-        print(f"INFO: External Robot (URDF) initialized with ID {self.robot_id}.")
+        self.robot_id = self._load_robot()
 
-    def _load_robot_model(self):
-        """
-        Loads the robot model from the specified URDF path.
-        """
-        # Ensure the URDF path exists
+        self.wheel_joints = [LEFT_WHEEL_JOINT_INDEX, RIGHT_WHEEL_JOINT_INDEX]
+        self.LIDAR_MAX_RANGE = 10.0
+        # Enable simple motor control
+        p.setJointMotorControlArray(
+            self.robot_id,
+            self.wheel_joints,
+            p.VELOCITY_CONTROL,
+            forces=[MAX_MOTOR_FORCE, MAX_MOTOR_FORCE],
+            physicsClientId=self.client
+        )
+
+        # Calculate projection matrix (only once)
+        self.projection_matrix = p.computeProjectionMatrixFOV(
+            fov=CAMERA_FOV,
+            aspect=CAMERA_ASPECT,
+            nearVal=CAMERA_NEAR,
+            farVal=CAMERA_FAR,
+            physicsClientId=self.client
+        )
+
+        print("INFO: Robot initialized.")
+
+    # -------------------------------------------------------------
+    # Loading
+    # -------------------------------------------------------------
+    def _load_robot(self):
         if not os.path.exists(ROBOT_URDF_PATH):
-            raise FileNotFoundError(
-                f"CRITICAL: Robot URDF not found at path: {ROBOT_URDF_PATH}. Please update ROBOT_URDF_PATH.")
+            raise FileNotFoundError(f"URDF not found: {ROBOT_URDF_PATH}")
 
-        # Load the URDF model
-        robot_id = p.loadURDF(ROBOT_URDF_PATH,
-                              basePosition=self.start_pos,
-                              baseOrientation=[0, 0, 0, 1],
-                              useFixedBase=False,
-                              physicsClientId=self.client)
+        return p.loadURDF(
+            ROBOT_URDF_PATH,
+            basePosition=self.start_pos,
+            baseOrientation=[0, 0, 0, 1],
+            useFixedBase=False,
+            physicsClientId=self.client
+        )
 
-        return robot_id
-
-    def _find_wheel_joints(self):
-        """
-        Identifies and returns the PyBullet joint IDs for the left and right motorized wheels.
-        This relies on the constants defined above.
-        """
-        # If the URDF is well-structured, the joints are usually the first few indices.
-        # Verify LEFT_WHEEL_JOINT_INDEX and RIGHT_WHEEL_JOINT_INDEX above!
-        return [LEFT_WHEEL_JOINT_INDEX, RIGHT_WHEEL_JOINT_INDEX]
-
+    # -------------------------------------------------------------
+    # Movement
+    # -------------------------------------------------------------
     def set_velocity(self, left_vel, right_vel):
         """
-        Implements low-level differential control using PyBullet's setJointMotorControl2.
-
-        Args:
-            left_vel (float): Target angular velocity of the left wheel (rad/s).
-            right_vel (float): Target angular velocity of the right wheel (rad/s).
+        Sets velocity for the differential drive wheels.
         """
-        if not self.wheel_joints:
-            # Fallback for simple body if joint IDs were not found
-            # You should remove this once you verify the joint indices
-            print("WARNING: Wheel joints not defined. Using simplified body control.")
-            return
+        p.setJointMotorControl2(
+            self.robot_id,
+            LEFT_WHEEL_JOINT_INDEX,
+            p.VELOCITY_CONTROL,
+            targetVelocity=left_vel,
+            force=MAX_MOTOR_FORCE,
+            physicsClientId=self.client
+        )
 
-        left_wheel_id, right_wheel_id = self.wheel_joints[0], self.wheel_joints[1]
+        p.setJointMotorControl2(
+            self.robot_id,
+            RIGHT_WHEEL_JOINT_INDEX,
+            p.VELOCITY_CONTROL,
+            targetVelocity=right_vel,
+            force=MAX_MOTOR_FORCE,
+            physicsClientId=self.client
+        )
 
-        # Set motor control for the left wheel
-        p.setJointMotorControl2(self.robot_id,
-                                left_wheel_id,
-                                p.VELOCITY_CONTROL,
-                                targetVelocity=left_vel,
-                                force=MAX_MOTOR_FORCE,
-                                physicsClientId=self.client)
-
-        # Set motor control for the right wheel
-        p.setJointMotorControl2(self.robot_id,
-                                right_wheel_id,
-                                p.VELOCITY_CONTROL,
-                                targetVelocity=right_vel,
-                                force=MAX_MOTOR_FORCE,
-                                physicsClientId=self.client)
-
-    # --- Sensor Simulation (Retained but potentially requires adjustment for placement) ---
-
-    def _setup_camera_parameters(self, width=64, height=64, fov=60):
-        """Defines parameters for the simulated camera sensor."""
-        aspect = width / height
-        near_val = 0.01
-        far_val = 10.0
-        projection_matrix = p.computeProjectionMatrixFOV(fov, aspect, near_val, far_val, physicsClientId=self.client)
-        return {
-            'width': width,
-            'height': height,
-            'proj_matrix': projection_matrix,
-            'fov': fov,
-            'near': near_val,
-            'far': far_val
-        }
-
-    def get_camera_image(self):
-        """
-        Simulates the robot's camera view. Ensure the camera position is outside the URDF geometry.
-        """
-        pos, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
-        rot_matrix = np.array(p.getMatrixFromQuaternion(quat)).reshape(3, 3)
-
-        # Adjust these offsets based on the actual URDF's dimensions!
-        CAMERA_OFFSET_FORWARD = 0.15
-        CAMERA_OFFSET_Z = 0.1
-        TARGET_OFFSET_FORWARD = 0.5
-        UP_VECTOR = [0, 0, 1]
-
-        # Calculate camera position (Eye)
-        camera_pos = [
-            pos[0] + rot_matrix[0, 0] * CAMERA_OFFSET_FORWARD,
-            pos[1] + rot_matrix[1, 0] * CAMERA_OFFSET_FORWARD,
-            pos[2] + CAMERA_OFFSET_Z
-        ]
-
-        # Calculate target position
-        target_pos = [
-            pos[0] + rot_matrix[0, 0] * TARGET_OFFSET_FORWARD,
-            pos[1] + rot_matrix[1, 0] * TARGET_OFFSET_FORWARD,
-            pos[2] + CAMERA_OFFSET_Z
-        ]
-
-        view_matrix = p.computeViewMatrix(cameraEyePosition=camera_pos,
-                                          cameraTargetPosition=target_pos,
-                                          cameraUpVector=UP_VECTOR,
-                                          physicsClientId=self.client)
-
-        img_data = p.getCameraImage(width=self.camera_setup['width'],
-                                    height=self.camera_setup['height'],
-                                    viewMatrix=view_matrix,
-                                    projectionMatrix=self.camera_setup['proj_matrix'],
-                                    renderer=p.ER_BULLET_HARDWARE_OPENGL,
-                                    physicsClientId=self.client)
-
-        rgb_array = np.reshape(img_data[2], (self.camera_setup['height'], self.camera_setup['width'], 4))[:, :, :3]
-        return rgb_array.astype(np.uint8)
-
+    # -------------------------------------------------------------
+    # LiDAR
+    # -------------------------------------------------------------
     def get_lidar_data(self):
         """
-        Simulates a 360-degree 2D LiDAR sensor using p.rayTestBatch.
+        Clean + correct 2D LiDAR using PyBullet ray tests.
         """
+        # Remove old debug lines
+        for line_id in self.debug_lines:
+            p.removeUserDebugItem(line_id, physicsClientId=self.client)
+        self.debug_lines.clear()
+
+        # Get robot pose
         pos, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
+        yaw = p.getEulerFromQuaternion(quat)[2]
 
         angles = np.linspace(0, 2 * np.pi, LIDAR_RAYS, endpoint=False)
-        _, _, yaw = p.getEulerFromQuaternion(quat)
 
-        start_points = []
-        end_points = []
+        start_points, end_points = [], []
 
-        # Define ray start and end points
         for angle in angles:
             world_angle = yaw + angle
-            start_point = [pos[0], pos[1], 0.05]
-            end_point = [
-                pos[0] + LIDAR_MAX_RANGE * np.cos(world_angle),
-                pos[1] + LIDAR_MAX_RANGE * np.sin(world_angle),
-                0.05
+
+            # Start a bit outside the body
+            start = [
+                pos[0] + np.cos(world_angle) * LIDAR_START_OFFSET,
+                pos[1] + np.sin(world_angle) * LIDAR_START_OFFSET,
+                LIDAR_Z
             ]
 
-            start_points.append(start_point)
-            end_points.append(end_point)
+            end = [
+                start[0] + np.cos(world_angle) * LIDAR_RANGE,
+                start[1] + np.sin(world_angle) * LIDAR_RANGE,
+                LIDAR_Z
+            ]
 
-        ray_results = p.rayTestBatch(start_points, end_points, physicsClientId=self.client)
+            start_points.append(start)
+            end_points.append(end)
+
+        results = p.rayTestBatch(start_points, end_points, physicsClientId=self.client)
 
         distances = []
-        for result in ray_results:
-            hit_fraction = result[0]
-            distance = hit_fraction * LIDAR_MAX_RANGE
+
+        for i, result in enumerate(results):
+            hit_object = result[0]
+            hit_fraction = result[2]
+            hit_position = result[3]
+
+            if hit_object == -1:
+                # No hit
+                distance = LIDAR_RANGE
+                line_end = end_points[i]
+                color = [1, 0, 0] # Red
+            else:
+                # Hit
+                distance = hit_fraction * LIDAR_RANGE
+                line_end = hit_position
+                color = [0, 1, 0] # Green
+
             distances.append(distance)
 
+            # Draw debug line
+            line_id = p.addUserDebugLine(
+                start_points[i], line_end, color, 1, 0.05, physicsClientId=self.client
+            )
+            self.debug_lines.append(line_id)
+
         return np.array(distances)
+
+    # -------------------------------------------------------------
+    # Camera
+    # -------------------------------------------------------------
+    def get_camera_image(self): # <-- RENAMED THIS METHOD
+        """
+        Get the camera image data.
+        """
+        # Get robot base pose
+        pos, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
+        
+        # Get rotation matrix from quaternion
+        rot_matrix = p.getMatrixFromQuaternion(quat)
+        rot_matrix = np.array(rot_matrix).reshape(3, 3)
+
+        # Camera offset (in robot's frame)
+        local_cam_pos = np.array([CAMERA_X_OFFSET, 0, CAMERA_Z_OFFSET])
+        
+        # Target point (look straight ahead from camera, in robot's frame)
+        # Look 1m in front of the camera
+        local_cam_target = np.array([CAMERA_X_OFFSET + 1.0, 0, CAMERA_Z_OFFSET]) 
+        
+        # "Up" vector (in robot's frame, Z-axis)
+        local_cam_up = np.array([0, 0, 1])
+
+        # Transform positions/vectors to world coordinates
+        # np.dot(rot_matrix, vector) is safer than rot_matrix.dot(vector)
+        world_cam_pos = pos + np.dot(rot_matrix, local_cam_pos)
+        world_cam_target = pos + np.dot(rot_matrix, local_cam_target)
+        world_cam_up = np.dot(rot_matrix, local_cam_up)
+
+        # Calculate view matrix
+        view_matrix = p.computeViewMatrix(
+            cameraEyePosition=world_cam_pos,
+            cameraTargetPosition=world_cam_target,
+            cameraUpVector=world_cam_up,
+            physicsClientId=self.client
+        )
+
+        # Get the image
+        img_data = p.getCameraImage(
+            width=CAMERA_WIDTH,
+            height=CAMERA_HEIGHT,
+            viewMatrix=view_matrix,
+            projectionMatrix=self.projection_matrix,
+            renderer=p.ER_BULLET_HARDWARE_OPENGL, # Use the main hardware renderer
+            physicsClientId=self.client
+        )
+        
+        # Extract RGB data
+        # img_data[0] = width
+        # img_data[1] = height
+        # img_data[2] = RGB pixels (array of (height, width, 4) RGBA bytes)
+        # img_data[3] = depth buffer
+        # img_data[4] = segmentation buffer
+        
+        width = img_data[0]
+        height = img_data[1]
+        rgb_pixels = np.array(img_data[2]).reshape(height, width, 4)
+        
+        # Return the RGB image (dropping the Alpha channel)
+        return width, height, rgb_pixels[:, :, :3]
