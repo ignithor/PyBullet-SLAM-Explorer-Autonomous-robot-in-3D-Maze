@@ -8,3 +8,4 @@ conda install matplotlib
 pip install opencv-contrib-python 
 pip install scipy 
 pip install ffmpeg-python 
+pip install transformers pillow pytorch
