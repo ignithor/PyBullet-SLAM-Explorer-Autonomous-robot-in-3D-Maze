@@ -107,6 +107,15 @@ class Robot:
             physicsClientId=self.client
         )
 
+    def get_pose(self):
+        """
+        Returns the robot base (x,y) position and yaw (radians).
+        """
+        pos, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
+        euler = p.getEulerFromQuaternion(quat)
+        yaw = euler[2]
+        return (pos[0], pos[1]), yaw
+
     # -------------------------------------------------------------
     # LiDAR
     # -------------------------------------------------------------
