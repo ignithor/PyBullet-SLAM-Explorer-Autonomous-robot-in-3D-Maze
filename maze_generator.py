@@ -19,6 +19,7 @@ class MazeGenerator:
         # [0]=N, [1]=S, [2]=E, [3]=W
         self.maze = np.ones((size, size, 4), dtype=int)
         self.visited = np.zeros((size, size), dtype=bool)
+        random.seed(8)
 
     def _get_unvisited_neighbors(self, r, c):
         """Returns a list of unvisited neighbors and the wall index to remove."""
