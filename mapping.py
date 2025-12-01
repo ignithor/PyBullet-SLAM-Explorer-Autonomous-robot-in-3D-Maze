@@ -1,137 +1,137 @@
 import numpy as np
 
-# --- Constantes ---
-# Doivent correspondre aux valeurs physiques du robot
-LIDAR_RANGE = 5.0    # Portée max du Lidar en mètres
-LIDAR_RAYS = 36      # Nombre de rayons (doit correspondre au robot.py)
+# --- Constants ---
+# Must match the physical values of the robot
+LIDAR_RANGE = 5.0    # Max Lidar range in meters
+LIDAR_RAYS = 36      # Number of rays (must match robot.py)
 
 class Slam:
     """
-    Implémente un algorithme de SLAM par Grille d'Occupation (Occupancy Grid).
+    Implements an Occupancy Grid SLAM algorithm.
     
-    Le principe est de diviser le monde en une grille. Chaque case contient
-    une valeur 'log-odds' qui représente la probabilité d'être un obstacle.
+    The principle is to divide the world into a grid. Each cell contains
+    a 'log-odds' value representing the probability of being an obstacle.
     """
     
-    # --- Constantes Log-Odds (Probabilités) ---
-    # On utilise des logs pour pouvoir additionner les probabilités simplement.
-    # > 0 : Probablement un obstacle
-    # < 0 : Probablement libre
-    LOG_ODDS_HIT = 0.9    # Valeur ajoutée si le laser touche un obstacle (Bonus)
-    LOG_ODDS_FREE = 0.4   # Valeur soustraite si le laser traverse la case (Malus)
-    LOG_ODDS_CLAMP = 20.0 # Valeur min/max pour éviter l'infini (saturation)
+    # --- Log-Odds Constants (Probabilities) ---
+    # We use logs to simply add probabilities.
+    # > 0 : Likely an obstacle
+    # < 0 : Likely free
+    LOG_ODDS_HIT = 0.9    # Value added if the laser hits an obstacle (Bonus)
+    LOG_ODDS_FREE = 0.4   # Value subtracted if the laser passes through the cell (Malus)
+    LOG_ODDS_CLAMP = 20.0 # Min/max value to avoid infinity (clamping)
 
     def __init__(self, map_size_m=40.0, map_resolution=0.1):
         """
-        Initialise la grille.
+        Initializes the grid.
         
         Args:
-            map_size_m (float): Taille du monde en mètres (ex: 40x40m).
-            map_resolution (float): Taille d'une case en mètres (ex: 0.1 = 10cm).
+            map_size_m (float): World size in meters (e.g., 40x40m).
+            map_resolution (float): Size of a cell in meters (e.g., 0.1 = 10cm).
         """
         self.map_size_m = map_size_m
         self.resolution = map_resolution
         
-        # Calcul du nombre de cellules (ex: 40m / 0.1m = 400 cellules de large)
+        # Calculate number of cells (e.g., 40m / 0.1m = 400 cells wide)
         self.size_cells = int(self.map_size_m / self.resolution)
         
-        # On centre la carte : le robot démarre au milieu (0,0 dans le monde)
-        # origin_m est le coin bas-gauche en coordonnées monde
+        # Center the map: the robot starts in the middle (0,0 in the world)
+        # origin_m is the bottom-left corner in world coordinates
         self.origin_m = -self.map_size_m / 2.0
         
-        # Création de la matrice de la carte (remplie de 0 = inconnu)
+        # Create map matrix (filled with 0 = unknown)
         self.map = np.zeros((self.size_cells, self.size_cells), dtype=np.float32)
         
-        # Pré-calcul des angles du Lidar (0 à 2*Pi) pour gagner du temps
-        # 0° = Droite du robot, 90° = Devant
+        # Pre-calculate Lidar angles (0 to 2*Pi) to save time
+        # 0° = Robot's right, 90° = Front
         self.lidar_angles = np.linspace(0, 2 * np.pi, LIDAR_RAYS, endpoint=False)
 
-        print(f"INFO: SLAM initialisé. Carte: {self.size_cells}x{self.size_cells} cellules ({map_size_m}x{map_size_m}m).")
+        print(f"INFO: SLAM initialized. Map: {self.size_cells}x{self.size_cells} cells ({map_size_m}x{map_size_m}m).")
 
     def world_to_grid(self, x_world, y_world):
         """
-        Étape 2 : Conversion Coordonnées Monde (mètres) -> Coordonnées Grille (indices).
+        Step 2: Convert World Coordinates (meters) -> Grid Coordinates (indices).
         """
-        # Formule : (Position - Origine) / Résolution
+        # Formula: (Position - Origin) / Resolution
         x_grid = int((x_world - self.origin_m) / self.resolution)
         y_grid = int((y_world - self.origin_m) / self.resolution)
 
-        # Vérification si on est hors de la carte
+        # Check if outside the map
         if 0 <= x_grid < self.size_cells and 0 <= y_grid < self.size_cells:
             return (x_grid, y_grid)
         return None
 
     def update(self, robot_pos, robot_yaw, lidar_data):
         """
-        Étape 3 & 4 : Met à jour la carte avec une nouvelle lecture du Lidar.
+        Step 3 & 4: Updates the map with a new Lidar reading.
         
         Args:
-            robot_pos (list): [x, y] position actuelle du robot.
-            robot_yaw (float): Angle actuel du robot (orientation).
-            lidar_data (array): Liste des distances mesurées par le Lidar.
+            robot_pos (list): [x, y] current robot position.
+            robot_yaw (float): Current robot angle (orientation).
+            lidar_data (array): List of distances measured by the Lidar.
         """
         robot_x, robot_y = robot_pos
         
-        # On utilise des 'set' pour stocker les cases uniques à mettre à jour
-        # (évite de mettre à jour 10 fois la même case pour un seul scan)
+        # Use 'set' to store unique cells to update
+        # (avoids updating the same cell 10 times for a single scan)
         free_cells = set()
         occupied_cells = set()
 
-        # Pour chaque rayon du Lidar...
+        # For each Lidar ray...
         for i, dist in enumerate(lidar_data):
-            # 1. Calculer l'angle réel du rayon dans le monde
+            # 1. Calculate the actual ray angle in the world
             world_angle = robot_yaw + self.lidar_angles[i]
             
-            # 2. Calculer la position exacte de l'impact (ou fin de rayon)
+            # 2. Calculate the exact hit position (or ray end)
             hit_x = robot_x + dist * np.cos(world_angle)
             hit_y = robot_y + dist * np.sin(world_angle)
             
-            # Vérifier si c'est une détection réelle ou juste la portée max (ciel)
+            # Check if it's a real detection or just max range (sky)
             is_max_range = (dist >= LIDAR_RANGE - 0.1)
 
-            # --- Ray Tracing (Algorithme géométrique) ---
-            # On parcourt la ligne entre le robot et l'impact
+            # --- Ray Tracing (Geometric Algorithm) ---
+            # Traverse the line between robot and hit
             vec_x = hit_x - robot_x
             vec_y = hit_y - robot_y
-            num_steps = int(dist / self.resolution) # Nombre de cases à traverser
+            num_steps = int(dist / self.resolution) # Number of cells to traverse
 
             for step in range(num_steps):
-                # On avance petit à petit sur la ligne
+                # Step incrementally along the line
                 t = step / num_steps if num_steps > 0 else 0
                 p_x = robot_x + (t * vec_x)
                 p_y = robot_y + (t * vec_y)
                 
                 cell = self.world_to_grid(p_x, p_y)
                 if cell:
-                    free_cells.add(cell) # Cette case est LIBRE
+                    free_cells.add(cell) # This cell is FREE
 
-            # --- Marquage de l'obstacle ---
+            # --- Marking the obstacle ---
             if not is_max_range:
                 hit_cell = self.world_to_grid(hit_x, hit_y)
                 if hit_cell:
-                    occupied_cells.add(hit_cell) # Cette case est OCCUPÉE
+                    occupied_cells.add(hit_cell) # This cell is OCCUPIED
 
-        # --- Mise à jour de la matrice (Log-Odds) ---
+        # --- Map Matrix Update (Log-Odds) ---
         
-        # Marquer les cases libres (Soustraction)
+        # Mark free cells (Subtraction)
         for (gx, gy) in free_cells:
-            # On ne marque pas libre une case qu'on vient de détecter comme occupée
+            # Do not mark as free a cell just detected as occupied
             if (gx, gy) not in occupied_cells:
                  self.map[gy, gx] -= self.LOG_ODDS_FREE
 
-        # Marquer les cases occupées (Addition)
+        # Mark occupied cells (Addition)
         for (gx, gy) in occupied_cells:
             self.map[gy, gx] += self.LOG_ODDS_HIT
 
-        # Saturation (Clamp) pour ne pas avoir des valeurs infinies
+        # Saturation (Clamp) to avoid infinite values
         np.clip(self.map, -self.LOG_ODDS_CLAMP, self.LOG_ODDS_CLAMP, out=self.map)
 
     def get_map_probabilities(self):
         """
-        Étape 5 : Convertit la carte log-odds en probabilités (0.0 à 1.0) pour l'affichage.
-        0.0 = Blanc (Libre), 1.0 = Noir (Mur), 0.5 = Gris (Inconnu)
+        Step 5: Converts the log-odds map to probabilities (0.0 to 1.0) for display.
+        0.0 = White (Free), 1.0 = Black (Wall), 0.5 = Gray (Unknown)
         """
-        # Formule Sigmoïde : p = exp(val) / (1 + exp(val))
+        # Sigmoid Formula: p = exp(val) / (1 + exp(val))
         exp_map = np.exp(self.map)
         prob_map = exp_map / (1.0 + exp_map)
         return prob_map

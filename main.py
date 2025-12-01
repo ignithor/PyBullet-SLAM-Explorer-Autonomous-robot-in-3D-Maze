@@ -9,8 +9,7 @@ if __name__ == "__main__":
         # 1. Initialize the Simulation Environment (loads maze and robot)
         sim = SimulationManager()
         
-        # 2. Run the main loop (where control, perception, and SLAM will operate)
-        # The run_simulation method now contains the main test movement logic
+        # 2. Run the main loop (where control, perception, and SLAM operate)
         sim.run_simulation()
 
     except Exception as e:

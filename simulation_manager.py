@@ -137,7 +137,6 @@ class SimulationManager:
                 if step_count % steps_per_5_sec == 0:
                     print("\n--- Analysing Visual Scene ---")
                     # Pass only the RGB array to the detector
-                    # FIX: Cast to uint8 because PyBullet returns int64 (i8), which PIL cannot handle
                     label, conf, all_probs = self.detector.detect(camera_rgb.astype(np.uint8))
                     
                     print(f"Prediction: {label.upper()} ({conf:.2f})")
