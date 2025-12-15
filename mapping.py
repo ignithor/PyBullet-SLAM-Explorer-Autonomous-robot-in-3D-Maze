@@ -35,9 +35,12 @@ class Slam:
         # Calculate number of cells (e.g., 40m / 0.1m = 400 cells wide)
         self.size_cells = int(self.map_size_m / self.resolution)
         
-        # Center the map: the robot starts in the middle (0,0 in the world)
-        # origin_m is the bottom-left corner in world coordinates
-        self.origin_m = -self.map_size_m / 2.0
+        # --- MAP ORIGIN ADJUSTMENT ---
+        # The simulation maze starts at (0,0) and extends to positive X and Y.
+        # Instead of centering the map (origin = -size/2), we set the origin 
+        # to a small negative value. This puts (0,0) near the bottom-left corner,
+        # ensuring the whole maze fits in the map.
+        self.origin_m = -5.0
         
         # Create map matrix (filled with 0 = unknown)
         self.map = np.zeros((self.size_cells, self.size_cells), dtype=np.float32)
@@ -47,6 +50,7 @@ class Slam:
         self.lidar_angles = np.linspace(0, 2 * np.pi, LIDAR_RAYS, endpoint=False)
 
         print(f"INFO: SLAM initialized. Map: {self.size_cells}x{self.size_cells} cells ({map_size_m}x{map_size_m}m).")
+        print(f"INFO: Map Origin: {self.origin_m}m (World (0,0) is near bottom-left)")
 
     def world_to_grid(self, x_world, y_world):
         """

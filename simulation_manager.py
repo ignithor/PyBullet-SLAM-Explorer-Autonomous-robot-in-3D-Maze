@@ -9,7 +9,8 @@ from maze_generator import MazeGenerator, MAZE_SIZE, CELL_SIZE
 from robot import Robot
 from control_module import ControlModule
 from mapping import Slam
-from perception_module import DuckDetector  # <-- NEW IMPORT
+from perception_module import DuckDetector
+from exploration import FrontierExplorer
 
 # --- Physics Constants ---
 WALL_RESTITUTION = 0.0
@@ -53,8 +54,12 @@ class SimulationManager:
         # Initialize AI Perception
         self.detector = DuckDetector()
         
+        # Initialize Exploration Module
+        self.explorer = FrontierExplorer()
+        
         # 6. Visualization
-        self.fig, self.ax, self.im, self.path_plot = self._setup_plot()
+        # Added robot_marker return here
+        self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker = self._setup_plot()
         self._setup_camera()
 
     def _load_environment(self):
@@ -81,7 +86,7 @@ class SimulationManager:
         """
         Loads a yellow duck into the maze at a specific location.
         """
-        # Place duck in cell (1, 0) - ensure this coordinate exists in your maze size
+        # Place duck in cell (1, 0)
         duck_x = 1.5 * CELL_SIZE
         duck_y = 0.5 * CELL_SIZE
         duck_z = 0.3 # Slightly above ground
@@ -107,12 +112,17 @@ class SimulationManager:
         initial_map = self.slam.get_map_probabilities()
         im = ax.imshow(initial_map, cmap='gray_r', origin='lower', vmin=0.0, vmax=1.0, 
                        extent=[self.slam.origin_m, self.slam.origin_m + self.slam.map_size_m, self.slam.origin_m, self.slam.origin_m + self.slam.map_size_m])
-        path_plot, = ax.plot([], [], 'r-', linewidth=0.5)
-        return fig, ax, im, path_plot
+        
+        path_plot, = ax.plot([], [], 'r-', linewidth=0.5, label='Traveled')
+        plan_plot, = ax.plot([], [], 'b--', linewidth=1.0, label='Planned')
+        
+        # NEW: Robot Marker (Green Circle)
+        robot_marker, = ax.plot([], [], 'go', markersize=8, label='Robot', markeredgecolor='black')
+        
+        ax.legend()
+        return fig, ax, im, path_plot, plan_plot, robot_marker
 
     def run_simulation(self):
-        controller = ControlModule(self.robot)
-        
         # Calculate steps for 5 seconds
         steps_per_5_sec = int(5.0 / TIME_STEP)
         
@@ -120,12 +130,9 @@ class SimulationManager:
             step_count = 0
             while p.isConnected():
                 
-                # 1. Control & Sensing
-                # lidar_data is an array, camera_packet is (width, height, rgb_pixels)
-                lidar_data, camera_packet = controller.step()
-
-                # Unpack the camera tuple to get the actual RGB array
-                _, _, camera_rgb = camera_packet
+                # 1. Sensing (Direct from Robot)
+                lidar_data = self.robot.get_lidar_data()
+                width, height, camera_rgb = self.robot.get_camera_image()
 
                 # 2. SLAM Update
                 pos, quat = p.getBasePositionAndOrientation(self.robot.robot_id)
@@ -133,7 +140,19 @@ class SimulationManager:
                 self.slam.update([pos[0], pos[1]], yaw, lidar_data)
                 self.robot_path.append([pos[0], pos[1]])
 
-                # 3. AI Perception (Every 5 seconds)
+                # 3. Autonomous Exploration Control
+                map_probs = self.slam.get_map_probabilities()
+                
+                left_vel, right_vel = self.explorer.get_control_command(
+                    robot_pose=(pos[0], pos[1], yaw),
+                    map_probs=map_probs,
+                    map_origin=self.slam.origin_m,
+                    map_resolution=self.slam.resolution
+                )
+                
+                self.robot.set_velocity(left_vel, right_vel)
+
+                # 4. AI Perception (Every 5 seconds)
                 if step_count % steps_per_5_sec == 0:
                     print("\n--- Analysing Visual Scene ---")
                     # Pass only the RGB array to the detector
@@ -143,12 +162,25 @@ class SimulationManager:
                     if label == "a yellow duck" and conf > 0.6:
                         print(">>> DUCK DETECTED! <<<")
                 
-                # 4. Visualization Update
+                # 5. Visualization Update
                 if step_count % MAP_UPDATE_RATE == 0:
                     self.im.set_data(self.slam.get_map_probabilities())
+                    
+                    # Update Traveled Path
                     path_arr = np.array(self.robot_path)
                     if len(path_arr) > 0:
                         self.path_plot.set_data(path_arr[:, 0], path_arr[:, 1])
+                    
+                    # Update Planned Path (Blue)
+                    if self.explorer.current_path:
+                        plan_arr = np.array(self.explorer.current_path)
+                        self.plan_plot.set_data(plan_arr[:, 0], plan_arr[:, 1])
+                    else:
+                        self.plan_plot.set_data([], [])
+
+                    # NEW: Update Robot Position
+                    self.robot_marker.set_data([pos[0]], [pos[1]])
+
                     self.fig.canvas.draw()
                     self.fig.canvas.flush_events()
 
