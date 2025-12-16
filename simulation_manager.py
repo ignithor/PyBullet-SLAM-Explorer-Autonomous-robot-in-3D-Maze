@@ -185,7 +185,7 @@ class SimulationManager:
                     self.fig.canvas.flush_events()
 
                 p.stepSimulation()
-                time.sleep(TIME_STEP)
+                # time.sleep(TIME_STEP)
                 step_count += 1
 
         except p.error:

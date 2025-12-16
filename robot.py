@@ -8,11 +8,11 @@ ROBOT_URDF_PATH = os.path.join(os.getcwd(), "urdf", "simple_two_wheel_car.urdf")
 LEFT_WHEEL_JOINT_INDEX = 0
 RIGHT_WHEEL_JOINT_INDEX = 1
 
-MAX_MOTOR_FORCE = 50.0
+MAX_MOTOR_FORCE = 350.0
 
 # --- LiDAR Constants ---
 LIDAR_RAYS = 36
-LIDAR_RANGE = 5.0
+LIDAR_RANGE = 10.0
 # Z height of the LiDAR (keep higher than wheel height)
 LIDAR_Z = 0.25
 # Start rays slightly outside robot body to avoid self-hit

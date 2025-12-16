@@ -5,14 +5,14 @@ class FrontierExplorer:
     """
     Advanced Frontier Exploration Module.
     Features:
-    - Obstacle Inflation: Ensures robot stays away from walls.
-    - Frontier Clustering: Targets largest 'zones' of unknown space rather than random pixels.
-    - A* Path Planning: Computes feasible paths around obstacles.
-    - PID Control: Smooth path following.
+    - Obstacle Inflation (C-Space): Inflates walls by robot radius to prevent collisions.
+    - Frontier Clustering: Targets largest 'zones' of unknown space.
+    - A* Path Planning: Computes feasible paths in the safe configuration space.
+    - PID Control: Smooth path following with adaptive lookahead.
     """
     def __init__(self):
         self.target_grid = None 
-        self.reached_threshold_m = 0.5
+        self.reached_threshold_m = 0.4 # Reduced threshold for precision
         
         # Path Planner
         self.planner = PathPlanner()
@@ -20,21 +20,21 @@ class FrontierExplorer:
         self.path_index = 0
         
         # PID Control parameters
-        self.max_linear_speed = 10.0 
-        self.lookahead_dist = 1.0     
+        self.max_linear_speed = 50.0   # Reduced max speed for better control
         
-        # PID Gains
-        self.kp_angular = 6.0   
-        self.ki_angular = 0.01  
-        self.kd_angular = 1.0   
+        # PID Gains (Tighter tuning)
+        self.kp_angular = 7.0   
+        self.ki_angular = 0.0  
+        self.kd_angular = 4.0   # High D term to dampen oscillation quickly
         
         # PID State
         self.prev_angle_err = 0.0
         self.integral_angle_err = 0.0
         
-        # Safety: Dilation radius for walls
-        # Reduced to 2 cells (0.2m) to allow passing through maze corridors
-        self.safety_margin_cells = 2
+        # --- ROBOT SIZE CONFIGURATION ---
+        # Increased slightly to keep robot safer from walls.
+        # Robot center will stay at least 0.45m from walls.
+        self.robot_radius_m = 0.45  
 
     def reset_pid(self):
         """Resets PID integral and derivative terms."""
@@ -50,29 +50,29 @@ class FrontierExplorer:
         
         height, width = map_probs.shape
         
-        # --- 2. Build Safe Navigation Map (Inflation) ---
-        # Identify walls (> 0.6 probability)
+        # --- 2. Build Safe Navigation Map (C-Space Inflation) ---
         raw_obstacles = map_probs > 0.6
         
-        # Dilate obstacles to create a safety buffer (manual convolution)
-        inflated_obstacles = raw_obstacles.copy()
-        for dx in range(-self.safety_margin_cells, self.safety_margin_cells + 1):
-            for dy in range(-self.safety_margin_cells, self.safety_margin_cells + 1):
-                if dx == 0 and dy == 0: continue
-                # Roll shift array
-                shifted = np.roll(raw_obstacles, shift=(dy, dx), axis=(0, 1))
-                inflated_obstacles |= shifted
+        # Calculate dynamic margin
+        margin_cells = int(np.ceil(self.robot_radius_m / map_resolution))
         
-        # Create Binary Grid for A* (1 = Unsafe/Wall, 0 = Safe)
+        # Dilate obstacles
+        inflated_obstacles = raw_obstacles.copy()
+        for dx in range(-margin_cells, margin_cells + 1):
+            for dy in range(-margin_cells, margin_cells + 1):
+                if dx**2 + dy**2 <= margin_cells**2:
+                    if dx == 0 and dy == 0: continue
+                    shifted = np.roll(raw_obstacles, shift=(dy, dx), axis=(0, 1))
+                    inflated_obstacles |= shifted
+        
+        # Create Binary Grid for A*
         binary_grid = np.zeros_like(map_probs, dtype=np.int8)
         binary_grid[inflated_obstacles] = 1 
         
         # --- 3. Identify Frontiers ---
-        # Free space (< 0.45) adjacent to Unknown space (0.45-0.55)
         free_mask = map_probs < 0.45
         unknown_mask = (map_probs >= 0.45) & (map_probs <= 0.55)
         
-        # Dilate free space to find edges touching unknown
         free_dilated = free_mask.copy()
         free_dilated[:-1, :] |= free_mask[1:, :] 
         free_dilated[1:, :] |= free_mask[:-1, :] 
@@ -80,8 +80,6 @@ class FrontierExplorer:
         free_dilated[:, 1:] |= free_mask[:, :-1] 
         
         frontier_mask = unknown_mask & free_dilated
-        
-        # Remove frontiers that are inside the Inflated (Unsafe) zone.
         frontier_mask = frontier_mask & (~inflated_obstacles)
         
         # --- 4. Logic Update ---
@@ -97,16 +95,17 @@ class FrontierExplorer:
             if np.hypot(tx_world - rx, ty_world - ry) < self.reached_threshold_m:
                 replan = True
             
-            # Case D: Path execution finished
-            elif not self.current_path or self.path_index >= len(self.current_path):
-                replan = True
+            # Case C: Auto-update path
+            else:
+                tx, ty = self.target_grid
+                if not frontier_mask[ty, tx]:
+                    replan = True
+                elif not self.current_path or self.path_index >= len(self.current_path):
+                    replan = True
 
         if replan:
-            # Find the best "Zone" to explore
             self.target_grid = self._find_best_frontier_zone(frontier_mask, map_resolution)
-            
             if self.target_grid:
-                # Plan Path using A*
                 self.current_path = self.planner.a_star(
                     start=(gx, gy), 
                     goal=self.target_grid, 
@@ -115,33 +114,40 @@ class FrontierExplorer:
                     origin=map_origin
                 )
                 self.path_index = 0
-                self.reset_pid() # Reset PID for new path
+                self.reset_pid()
             else:
                 self.current_path = []
         
-        # --- 5. Pure Pursuit Control with PID ---
+        # --- 5. Adaptive Pure Pursuit Control ---
         if not self.current_path:
-            print("DEBUG: No path found, searching/spinning...")
-            return 0.0, 3.0 # Spin slowly if stuck
+            print("DEBUG: No path found, searching...")
+            return 0.0, 3.0 # Spin slowly
 
-        # Update path_index to be the closest point to the robot
+        # Find closest point on path (Robust tracking)
         if self.path_index < len(self.current_path):
             search_len = 20 
             end_search = min(self.path_index + search_len, len(self.current_path))
-            
             dists = [np.hypot(p[0]-rx, p[1]-ry) for p in self.current_path[self.path_index:end_search]]
             if dists:
                 min_idx = np.argmin(dists)
                 self.path_index += min_idx
             
-        # Find lookahead point on the path
-        target_point = self.current_path[-1] # Default to end
+        # Determine Lookahead Distance dynamically
+        # If we are close to the path, look further ahead for speed.
+        # If we are off-path or tracking a curve, look closer for precision.
+        current_error = 0
+        if len(dists) > 0: current_error = dists[0]
         
-        # Search forward from current index
+        adaptive_lookahead = 0.6 # Base lookahead (closer than before)
+        if current_error > 0.3:
+            adaptive_lookahead = 0.4 # Tighten lookahead to get back on track
+            
+        # Find lookahead point
+        target_point = self.current_path[-1]
         for i in range(self.path_index, len(self.current_path)):
             px, py = self.current_path[i]
             dist = np.hypot(px - rx, py - ry)
-            if dist > self.lookahead_dist:
+            if dist > adaptive_lookahead:
                 target_point = (px, py)
                 break
                 
@@ -149,7 +155,6 @@ class FrontierExplorer:
         dx = tx - rx
         dy = ty - ry
         
-        # Calculate Heading Error
         target_angle = np.arctan2(dy, dx)
         angle_err = (target_angle - ryaw + np.pi) % (2 * np.pi) - np.pi
         
@@ -164,49 +169,40 @@ class FrontierExplorer:
                       (self.ki_angular * self.integral_angle_err) + \
                       (self.kd_angular * derivative)
         
-        # Linear Velocity Logic
-        if abs(angle_err) > np.pi / 2:
-            # Pivot if error is large
-            linear_v = 0.0
-            if abs(angular_v) < 2.0:
-                 angular_v = np.sign(angle_err) * 2.0
+        # Precise Velocity Logic
+        # Slow down aggressively if angle error is high
+        if abs(angle_err) > np.deg2rad(45):
+            linear_v = 0.0 # Pivot in place
+            # Boost angular if needed to overcome friction
+            if abs(angular_v) < 3.0: 
+                angular_v = np.sign(angle_err) * 3.0
         else:
-            # Smoothly interpolate speed
-            linear_v = self.max_linear_speed * np.cos(angle_err)
+            # Cosine profile for smooth slowing
+            linear_v = self.max_linear_speed * np.cos(angle_err * 2.0) # *2 makes it drop to 0 at 45deg
             if linear_v < 0: linear_v = 0
         
-        angular_v = np.clip(angular_v, -5.0, 5.0)
+        angular_v = np.clip(angular_v, -6.0, 6.0)
 
-        # --- FIX: INVERTED STEERING SIGNS ---
-        # Previous: left = lin - ang, right = lin + ang (Turning Right)
-        # New: left = lin + ang, right = lin - ang (Turning Left)
+        # Steering Mixing (Preserving the "Working" sign convention)
         left = np.clip(linear_v + angular_v, -15, 15)
         right = np.clip(linear_v - angular_v, -15, 15)
         
-        # --- DEBUG PRINT ---
-        print(f"DEBUG: Pos({rx:.1f},{ry:.1f}) Tgt({tx:.1f},{ty:.1f}) ErrDeg:{np.degrees(angle_err):.1f} L/R:{left:.1f}/{right:.1f} Idx:{self.path_index}/{len(self.current_path)}")
+        print(f"DEBUG: Pos({rx:.1f},{ry:.1f}) Tgt({tx:.1f},{ty:.1f}) Err:{np.degrees(angle_err):.1f} L/R:{left:.1f}/{right:.1f} Pth:{len(self.current_path)}")
 
         return left, right
 
     def _find_best_frontier_zone(self, frontier_mask, resolution):
-        """
-        Groups frontier pixels into coarse blocks and selects the best zone.
-        """
         indices = np.argwhere(frontier_mask)
         if len(indices) == 0: return None
         
-        # 1. Coarse Grid Clustering (1.0m blocks)
         block_size = int(1.0 / resolution) 
         if block_size < 1: block_size = 1
         
         block_coords = indices // block_size
-        
-        # 2. Find Block with most frontier pixels
         unique_blocks, counts = np.unique(block_coords, axis=0, return_counts=True)
         best_block_idx = np.argmax(counts)
         best_block = unique_blocks[best_block_idx]
         
-        # 3. Select Median Target from that Block
         mask = (block_coords[:, 0] == best_block[0]) & (block_coords[:, 1] == best_block[1])
         zone_indices = indices[mask]
         

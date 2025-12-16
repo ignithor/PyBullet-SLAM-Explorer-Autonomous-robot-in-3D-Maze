@@ -2,7 +2,7 @@ import numpy as np
 
 # --- Constants ---
 # Must match the physical values of the robot
-LIDAR_RANGE = 5.0    # Max Lidar range in meters
+LIDAR_RANGE = 10.0    # Max Lidar range in meters
 LIDAR_RAYS = 36      # Number of rays (must match robot.py)
 
 class Slam:
@@ -18,7 +18,7 @@ class Slam:
     # > 0 : Likely an obstacle
     # < 0 : Likely free
     LOG_ODDS_HIT = 0.9    # Value added if the laser hits an obstacle (Bonus)
-    LOG_ODDS_FREE = 0.4   # Value subtracted if the laser passes through the cell (Malus)
+    LOG_ODDS_FREE = 0.1   # Value subtracted if the laser passes through the cell (Malus)
     LOG_ODDS_CLAMP = 20.0 # Min/max value to avoid infinity (clamping)
 
     def __init__(self, map_size_m=40.0, map_resolution=0.1):
