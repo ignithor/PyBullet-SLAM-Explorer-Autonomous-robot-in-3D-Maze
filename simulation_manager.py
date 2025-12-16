@@ -42,7 +42,11 @@ class SimulationManager:
         
         self.robot_start_pos = [CELL_SIZE / 2, CELL_SIZE / 2, 0.1]
         self._load_robot()
+        
+        # Load Objects
         self._load_duck()
+        self._load_soccer_ball()
+        self._load_teddy_bear()
 
         self.slam = Slam(map_size_m=MAP_SIZE_M, map_resolution=0.1)
         self.robot_path = []
@@ -75,7 +79,7 @@ class SimulationManager:
     def _load_duck(self):
         # Place duck far enough to ensure exploration
         duck_x = 3.5 * CELL_SIZE
-        duck_y = 3.5 * CELL_SIZE
+        duck_y = 2.5 * CELL_SIZE
         duck_z = 0.3 # Slightly above ground
         
         # Use duck_vhacd.urdf from pybullet_data
@@ -88,6 +92,35 @@ class SimulationManager:
         except Exception:
             print("WARNING: Could not load duck_vhacd.urdf.")
 
+    def _load_soccer_ball(self):
+        """Loads a soccer ball as a distractor object."""
+        # Place soccer ball in a different location (e.g., cell 1, 2)
+        ball_x = 1.5 * CELL_SIZE
+        ball_y = 3.5 * CELL_SIZE
+        ball_z = 0.5
+        try:
+            self.ball_id = p.loadURDF("soccerball.urdf", 
+                                      basePosition=[ball_x, ball_y, ball_z], 
+                                      globalScaling=0.5) # Slightly larger to be visible
+            print(f"INFO: Soccer Ball placed at [{ball_x}, {ball_y}]")
+        except Exception:
+            print("WARNING: Could not load soccerball.urdf.")
+            
+    def _load_teddy_bear(self):
+        """Loads a teddy bear as a third object."""
+        # Place teddy bear in cell (2, 3)
+        bear_x = 2.3 * CELL_SIZE
+        bear_y = 0.5 * CELL_SIZE
+        bear_z = 0.0
+        try:
+            self.bear_id = p.loadURDF("teddy_vhacd.urdf", 
+                                      basePosition=[bear_x, bear_y, bear_z], 
+                                      baseOrientation=p.getQuaternionFromEuler([1.57,0,0]),
+                                      globalScaling=8.0) 
+            print(f"INFO: Teddy Bear placed at [{bear_x}, {bear_y}]")
+        except Exception:
+            print("WARNING: Could not load teddy_vhacd.urdf.")
+    
     def _setup_camera(self):
         center_x = MAZE_SIZE * CELL_SIZE / 2
         center_y = MAZE_SIZE * CELL_SIZE / 2
@@ -108,7 +141,7 @@ class SimulationManager:
         return fig, ax, im, path_plot, plan_plot, robot_marker
 
     def run_simulation(self):
-        steps_per_5_sec = int(5.0 / TIME_STEP)
+        steps_perception = int(1.0 / TIME_STEP)
         
         try:
             step_count = 0
@@ -139,28 +172,28 @@ class SimulationManager:
                     )
                     
                     # Periodic Detection (Only in Explore mode)
-                    if step_count % steps_per_5_sec == 0:
+                    if step_count % steps_perception == 0:
                         print("\n--- Analysing Visual Scene ---")
                         label, conf, _ = self.detector.detect(camera_rgb.astype(np.uint8))
                         print(f"Prediction: {label.upper()} ({conf:.2f})")
+                        
                         if label == "a yellow duck" and conf > 0.6:
                             print(">>> DUCK DETECTED! INITIATING STOP & RETURN SEQUENCE <<<")
                             self.current_state = STATE_STOP
+                        elif label == "a soccer ball" and conf > 0.6:
+                            print(">>> SOCCER BALL DETECTED! (Ignoring, looking for duck...) <<<")
+                        elif label == "a teddy bear" and conf > 0.6:
+                            print(">>> TEDDY BEAR DETECTED! (Ignoring...) <<<")
 
                 # 2. STATE STOP
                 elif self.current_state == STATE_STOP:
                     left_vel, right_vel = 0, 0 # Hard Stop
-                    # Just wait briefly (simulated by a few frames of 0 velocity)
-                    # In a real loop we might want a timer, here we jump to plan immediately
-                    # to keep the sim fluid, or pause briefly.
-                    time.sleep(1.0) # Real-time pause
+                    time.sleep(1.0) 
                     print("INFO: Robot stopped. Calculating path home...")
                     self.current_state = STATE_PLAN
 
                 # 3. STATE PLAN
                 elif self.current_state == STATE_PLAN:
-                    # Configure Explorer to Return Home (Start Pos)
-                    # Start pos is index 0 and 1 of self.robot_start_pos
                     home_x, home_y = self.robot_start_pos[0], self.robot_start_pos[1]
                     self.explorer.set_return_target(home_x, home_y)
                     self.current_state = STATE_RETURN
@@ -168,15 +201,12 @@ class SimulationManager:
 
                 # 4. STATE RETURN
                 elif self.current_state == STATE_RETURN:
-                    # Drive using fixed target logic
                     left_vel, right_vel = self.explorer.get_control_command(
                         robot_pose=(pos[0], pos[1], yaw),
                         map_probs=map_probs,
                         map_origin=self.slam.origin_m,
                         map_resolution=self.slam.resolution
                     )
-                    
-                    # Check if home (Explorer returns 0,0 when home)
                     if left_vel == 0 and right_vel == 0:
                         print("\n>>> MISSION ACCOMPLISHED: ROBOT RETURNED HOME <<<")
                         self.current_state = STATE_FINISHED
@@ -206,7 +236,7 @@ class SimulationManager:
                     self.fig.canvas.flush_events()
 
                 p.stepSimulation()
-                # time.sleep(TIME_STEP) # Turbo Mode
+                # time.sleep(TIME_STEP) 
                 step_count += 1
 
         except p.error:

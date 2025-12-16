@@ -15,7 +15,7 @@ class DuckDetector:
         self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
         
         # Define what we are looking for
-        self.labels = ["a yellow duck", "a wall", "an empty floor", "a robot"]
+        self.labels = ["a yellow duck", "a wall", "an empty floor", "a soccer ball", "a teddy bear"]
         print("INFO: CLIP Model loaded successfully.")
 
     def detect(self, rgb_array):
