@@ -141,7 +141,7 @@ class SimulationManager:
         return fig, ax, im, path_plot, plan_plot, robot_marker
 
     def run_simulation(self):
-        steps_perception = int(1.0 / TIME_STEP)
+        steps_perception = 30
         
         try:
             step_count = 0
