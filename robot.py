@@ -15,8 +15,7 @@ LIDAR_RAYS = 36
 LIDAR_RANGE = 10.0
 # Z height of the LiDAR (keep higher than wheel height)
 LIDAR_Z = 0.25
-# Start rays slightly outside robot body to avoid self-hit
-LIDAR_START_OFFSET = 0.20
+LIDAR_START_OFFSET = 0.0
 
 # --- Camera Constants ---
 CAMERA_WIDTH = 320  # Width in pixels
@@ -26,7 +25,7 @@ CAMERA_ASPECT = CAMERA_WIDTH / CAMERA_HEIGHT
 CAMERA_NEAR = 0.1     # Near clip plane
 CAMERA_FAR = 10.0     # Far clip plane
 # Camera position relative to robot's center (base_link)
-CAMERA_X_OFFSET = 0.15  # Slightly in front
+CAMERA_X_OFFSET = 0.0  # Slightly in front
 CAMERA_Z_OFFSET = 0.3   # Above the LiDAR
 
 
