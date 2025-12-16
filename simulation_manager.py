@@ -4,7 +4,6 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 
-# --- Custom Imports ---
 from maze_generator import MazeGenerator, MAZE_SIZE, CELL_SIZE
 from robot import Robot
 from control_module import ControlModule
@@ -22,52 +21,44 @@ TIME_STEP = 1. / 240.0
 MAP_UPDATE_RATE = 50
 MAP_SIZE_M = (MAZE_SIZE * CELL_SIZE) + 10.0
 
+# --- State Constants ---
+STATE_EXPLORE = 0
+STATE_STOP = 1
+STATE_PLAN = 2
+STATE_RETURN = 3
+STATE_FINISHED = 4
 
 class SimulationManager:
-    """
-    Manages the simulation, robot, SLAM, and AI Perception.
-    """
-
     def __init__(self):
-        # 1. Initialize PyBullet
         self.client = p.connect(p.GUI)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(TIME_STEP)
         p.setPhysicsEngineParameter(numSolverIterations=SOLVER_ITERATIONS)
 
-        # 2. Setup Environment
         self.maze_logic = MazeGenerator(MAZE_SIZE)
         self.maze_logic.generate()
         self._load_environment()
         
-        # 3. Load Robot
+        self.robot_start_pos = [CELL_SIZE / 2, CELL_SIZE / 2, 0.1]
         self._load_robot()
-
-        # 4. Load Duck
         self._load_duck()
 
-        # 5. Initialize Modules
         self.slam = Slam(map_size_m=MAP_SIZE_M, map_resolution=0.1)
         self.robot_path = []
         
-        # Initialize AI Perception
         self.detector = DuckDetector()
-        
-        # Initialize Exploration Module
         self.explorer = FrontierExplorer()
         
-        # 6. Visualization
-        # Added robot_marker return here
+        self.current_state = STATE_EXPLORE
+        
         self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker = self._setup_plot()
         self._setup_camera()
 
     def _load_environment(self):
-        # Load Floor
         plane_id = p.loadURDF("plane.urdf", physicsClientId=self.client)
         p.changeDynamics(plane_id, -1, restitution=WALL_RESTITUTION, lateralFriction=WALL_FRICTION)
 
-        # Load Walls
         walls_to_build = self.maze_logic.get_walls_to_build()
         wall_color = [0.2, 0.2, 0.8, 1]
 
@@ -79,14 +70,10 @@ class SimulationManager:
         print(f"INFO: Loaded {len(walls_to_build)} wall segments.")
 
     def _load_robot(self):
-        robot_start_pos = [CELL_SIZE / 2, CELL_SIZE / 2, 0.1]
-        self.robot = Robot(self.client, start_pos=robot_start_pos)
+        self.robot = Robot(self.client, start_pos=self.robot_start_pos)
 
     def _load_duck(self):
-        """
-        Loads a yellow duck into the maze at a specific location.
-        """
-        # Place duck in cell (1, 0)
+        # Place duck far enough to ensure exploration
         duck_x = 3.5 * CELL_SIZE
         duck_y = 3.5 * CELL_SIZE
         duck_z = 0.3 # Slightly above ground
@@ -96,10 +83,10 @@ class SimulationManager:
             self.duck_id = p.loadURDF("duck_vhacd.urdf", 
                                       basePosition=[duck_x, duck_y, duck_z], 
                                       baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
-                                      globalScaling=8.0) # Scale up so it's visible
+                                      globalScaling=8.0)
             print(f"INFO: Yellow Duck placed at [{duck_x}, {duck_y}]")
         except Exception:
-            print("WARNING: Could not load duck_vhacd.urdf. Make sure pybullet_data is correct.")
+            print("WARNING: Could not load duck_vhacd.urdf.")
 
     def _setup_camera(self):
         center_x = MAZE_SIZE * CELL_SIZE / 2
@@ -115,77 +102,111 @@ class SimulationManager:
         
         path_plot, = ax.plot([], [], 'r-', linewidth=0.5, label='Traveled')
         plan_plot, = ax.plot([], [], 'b--', linewidth=1.0, label='Planned')
-        
-        # NEW: Robot Marker (Green Circle)
         robot_marker, = ax.plot([], [], 'go', markersize=8, label='Robot', markeredgecolor='black')
         
         ax.legend()
         return fig, ax, im, path_plot, plan_plot, robot_marker
 
     def run_simulation(self):
-        # Calculate steps for 5 seconds
         steps_per_5_sec = int(5.0 / TIME_STEP)
         
         try:
             step_count = 0
             while p.isConnected():
                 
-                # 1. Sensing (Direct from Robot)
+                # --- SENSORS & SLAM ---
                 lidar_data = self.robot.get_lidar_data()
                 width, height, camera_rgb = self.robot.get_camera_image()
 
-                # 2. SLAM Update
                 pos, quat = p.getBasePositionAndOrientation(self.robot.robot_id)
                 yaw = p.getEulerFromQuaternion(quat)[2]
                 self.slam.update([pos[0], pos[1]], yaw, lidar_data)
                 self.robot_path.append([pos[0], pos[1]])
 
-                # 3. Autonomous Exploration Control
                 map_probs = self.slam.get_map_probabilities()
                 
-                left_vel, right_vel = self.explorer.get_control_command(
-                    robot_pose=(pos[0], pos[1], yaw),
-                    map_probs=map_probs,
-                    map_origin=self.slam.origin_m,
-                    map_resolution=self.slam.resolution
-                )
-                
+                # --- FINITE STATE MACHINE ---
+                left_vel, right_vel = 0, 0
+
+                # 1. STATE EXPLORE
+                if self.current_state == STATE_EXPLORE:
+                    # Drive using frontier explorer
+                    left_vel, right_vel = self.explorer.get_control_command(
+                        robot_pose=(pos[0], pos[1], yaw),
+                        map_probs=map_probs,
+                        map_origin=self.slam.origin_m,
+                        map_resolution=self.slam.resolution
+                    )
+                    
+                    # Periodic Detection (Only in Explore mode)
+                    if step_count % steps_per_5_sec == 0:
+                        print("\n--- Analysing Visual Scene ---")
+                        label, conf, _ = self.detector.detect(camera_rgb.astype(np.uint8))
+                        print(f"Prediction: {label.upper()} ({conf:.2f})")
+                        if label == "a yellow duck" and conf > 0.6:
+                            print(">>> DUCK DETECTED! INITIATING STOP & RETURN SEQUENCE <<<")
+                            self.current_state = STATE_STOP
+
+                # 2. STATE STOP
+                elif self.current_state == STATE_STOP:
+                    left_vel, right_vel = 0, 0 # Hard Stop
+                    # Just wait briefly (simulated by a few frames of 0 velocity)
+                    # In a real loop we might want a timer, here we jump to plan immediately
+                    # to keep the sim fluid, or pause briefly.
+                    time.sleep(1.0) # Real-time pause
+                    print("INFO: Robot stopped. Calculating path home...")
+                    self.current_state = STATE_PLAN
+
+                # 3. STATE PLAN
+                elif self.current_state == STATE_PLAN:
+                    # Configure Explorer to Return Home (Start Pos)
+                    # Start pos is index 0 and 1 of self.robot_start_pos
+                    home_x, home_y = self.robot_start_pos[0], self.robot_start_pos[1]
+                    self.explorer.set_return_target(home_x, home_y)
+                    self.current_state = STATE_RETURN
+                    print("INFO: Path planning complete. Returning to base.")
+
+                # 4. STATE RETURN
+                elif self.current_state == STATE_RETURN:
+                    # Drive using fixed target logic
+                    left_vel, right_vel = self.explorer.get_control_command(
+                        robot_pose=(pos[0], pos[1], yaw),
+                        map_probs=map_probs,
+                        map_origin=self.slam.origin_m,
+                        map_resolution=self.slam.resolution
+                    )
+                    
+                    # Check if home (Explorer returns 0,0 when home)
+                    if left_vel == 0 and right_vel == 0:
+                        print("\n>>> MISSION ACCOMPLISHED: ROBOT RETURNED HOME <<<")
+                        self.current_state = STATE_FINISHED
+
+                # 5. STATE FINISHED
+                elif self.current_state == STATE_FINISHED:
+                    left_vel, right_vel = 0, 0
+
+                # --- ACTUATION ---
                 self.robot.set_velocity(left_vel, right_vel)
 
-                # 4. AI Perception (Every 5 seconds)
-                if step_count % steps_per_5_sec == 0:
-                    print("\n--- Analysing Visual Scene ---")
-                    # Pass only the RGB array to the detector
-                    label, conf, all_probs = self.detector.detect(camera_rgb.astype(np.uint8))
-                    
-                    print(f"Prediction: {label.upper()} ({conf:.2f})")
-                    if label == "a yellow duck" and conf > 0.6:
-                        print(">>> DUCK DETECTED! <<<")
-                
-                # 5. Visualization Update
+                # --- VISUALIZATION ---
                 if step_count % MAP_UPDATE_RATE == 0:
                     self.im.set_data(self.slam.get_map_probabilities())
-                    
-                    # Update Traveled Path
                     path_arr = np.array(self.robot_path)
                     if len(path_arr) > 0:
                         self.path_plot.set_data(path_arr[:, 0], path_arr[:, 1])
                     
-                    # Update Planned Path (Blue)
                     if self.explorer.current_path:
                         plan_arr = np.array(self.explorer.current_path)
                         self.plan_plot.set_data(plan_arr[:, 0], plan_arr[:, 1])
                     else:
                         self.plan_plot.set_data([], [])
-
-                    # NEW: Update Robot Position
+                    
                     self.robot_marker.set_data([pos[0]], [pos[1]])
-
                     self.fig.canvas.draw()
                     self.fig.canvas.flush_events()
 
                 p.stepSimulation()
-                # time.sleep(TIME_STEP)
+                # time.sleep(TIME_STEP) # Turbo Mode
                 step_count += 1
 
         except p.error:
