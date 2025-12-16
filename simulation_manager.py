@@ -87,8 +87,8 @@ class SimulationManager:
         Loads a yellow duck into the maze at a specific location.
         """
         # Place duck in cell (1, 0)
-        duck_x = 1.5 * CELL_SIZE
-        duck_y = 0.5 * CELL_SIZE
+        duck_x = 3.5 * CELL_SIZE
+        duck_y = 3.5 * CELL_SIZE
         duck_z = 0.3 # Slightly above ground
         
         # Use duck_vhacd.urdf from pybullet_data
