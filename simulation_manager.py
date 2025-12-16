@@ -46,7 +46,7 @@ class SimulationManager:
         # Load Objects
         self._load_duck()
         self._load_soccer_ball()
-        self._load_teddy_bear()
+        self._load_teddy_bear() 
 
         self.slam = Slam(map_size_m=MAP_SIZE_M, map_resolution=0.1)
         self.robot_path = []
@@ -56,7 +56,10 @@ class SimulationManager:
         
         self.current_state = STATE_EXPLORE
         
-        self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker = self._setup_plot()
+        # Track found object location
+        self.found_duck_pos = None
+        
+        self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker, self.duck_marker = self._setup_plot()
         self._setup_camera()
 
     def _load_environment(self):
@@ -78,11 +81,11 @@ class SimulationManager:
 
     def _load_duck(self):
         # Place duck far enough to ensure exploration
-        duck_x = 3.5 * CELL_SIZE
+        # duck_x = 3.5 * CELL_SIZE
+        # duck_y = 2.5 * CELL_SIZE
+        duck_x = 1.5 * CELL_SIZE
         duck_y = 2.5 * CELL_SIZE
-        duck_z = 0.3 # Slightly above ground
-        
-        # Use duck_vhacd.urdf from pybullet_data
+        duck_z = 0.3
         try:
             self.duck_id = p.loadURDF("duck_vhacd.urdf", 
                                       basePosition=[duck_x, duck_y, duck_z], 
@@ -105,7 +108,7 @@ class SimulationManager:
             print(f"INFO: Soccer Ball placed at [{ball_x}, {ball_y}]")
         except Exception:
             print("WARNING: Could not load soccerball.urdf.")
-            
+
     def _load_teddy_bear(self):
         """Loads a teddy bear as a third object."""
         # Place teddy bear in cell (2, 3)
@@ -120,7 +123,7 @@ class SimulationManager:
             print(f"INFO: Teddy Bear placed at [{bear_x}, {bear_y}]")
         except Exception:
             print("WARNING: Could not load teddy_vhacd.urdf.")
-    
+
     def _setup_camera(self):
         center_x = MAZE_SIZE * CELL_SIZE / 2
         center_y = MAZE_SIZE * CELL_SIZE / 2
@@ -136,9 +139,10 @@ class SimulationManager:
         path_plot, = ax.plot([], [], 'r-', linewidth=0.5, label='Traveled')
         plan_plot, = ax.plot([], [], 'b--', linewidth=1.0, label='Planned')
         robot_marker, = ax.plot([], [], 'go', markersize=8, label='Robot', markeredgecolor='black')
+        duck_marker, = ax.plot([], [], 'y*', markersize=15, label='Duck', markeredgecolor='black')
         
         ax.legend()
-        return fig, ax, im, path_plot, plan_plot, robot_marker
+        return fig, ax, im, path_plot, plan_plot, robot_marker, duck_marker
 
     def run_simulation(self):
         steps_perception = 30
@@ -180,8 +184,43 @@ class SimulationManager:
                         if label == "a yellow duck" and conf > 0.6:
                             print(">>> DUCK DETECTED! INITIATING STOP & RETURN SEQUENCE <<<")
                             self.current_state = STATE_STOP
+                            
+                            # Estimate Duck Location based on LiDAR
+                            # Ray 0 is Center/Front. Check rays +/- 30 deg (Indices 0-3 and 33-35 for 36 rays)
+                            num_rays = len(lidar_data) # Should be 36
+                            front_indices = [0, 1, 2, 3, num_rays-3, num_rays-2, num_rays-1]
+                            
+                            # Find the closest obstacle in the camera's FOV
+                            min_dist = float('inf')
+                            closest_ray_idx = -1
+                            
+                            for idx in front_indices:
+                                if lidar_data[idx] < 9.5: # 9.5 is near max range (10.0) buffer
+                                    if lidar_data[idx] < min_dist:
+                                        min_dist = lidar_data[idx]
+                                        closest_ray_idx = idx
+                            
+                            if closest_ray_idx != -1:
+                                # Calculate coordinates of the obstacle
+                                # Angle of the ray relative to robot
+                                angle_step = 2 * np.pi / num_rays
+                                ray_angle = closest_ray_idx * angle_step
+                                # Normalize angle (0..2pi -> -pi..pi) if needed, but cos/sin handle it
+                                
+                                dx = pos[0] + min_dist * np.cos(yaw + ray_angle)
+                                dy = pos[1] + min_dist * np.sin(yaw + ray_angle)
+                                self.found_duck_pos = (dx, dy)
+                                print(f"DEBUG: Duck location estimated at [{dx:.2f}, {dy:.2f}] based on LiDAR.")
+                            else:
+                                # Fallback if LiDAR didn't catch it (unlikely if camera did)
+                                print("DEBUG: Camera saw duck but LiDAR didn't. Using fallback.")
+                                dx = pos[0] + 0.8 * np.cos(yaw)
+                                dy = pos[1] + 0.8 * np.sin(yaw)
+                                self.found_duck_pos = (dx, dy)
+                        
                         elif label == "a soccer ball" and conf > 0.6:
-                            print(">>> SOCCER BALL DETECTED! (Ignoring, looking for duck...) <<<")
+                            print(">>> SOCCER BALL DETECTED! (Ignoring...) <<<")
+                            
                         elif label == "a teddy bear" and conf > 0.6:
                             print(">>> TEDDY BEAR DETECTED! (Ignoring...) <<<")
 
@@ -207,7 +246,8 @@ class SimulationManager:
                         map_origin=self.slam.origin_m,
                         map_resolution=self.slam.resolution
                     )
-                    if left_vel == 0 and right_vel == 0:
+                    # print(f"DEBUG: Returning Home - Robot at [{pos[0]:.2f}, {pos[1]:.2f}]")
+                    if pos[0] < 1.6 and pos[1] < 1.6:
                         print("\n>>> MISSION ACCOMPLISHED: ROBOT RETURNED HOME <<<")
                         self.current_state = STATE_FINISHED
 
@@ -232,6 +272,11 @@ class SimulationManager:
                         self.plan_plot.set_data([], [])
                     
                     self.robot_marker.set_data([pos[0]], [pos[1]])
+                    
+                    # Update Duck Marker if found
+                    if self.found_duck_pos:
+                        self.duck_marker.set_data([self.found_duck_pos[0]], [self.found_duck_pos[1]])
+                    
                     self.fig.canvas.draw()
                     self.fig.canvas.flush_events()
 
