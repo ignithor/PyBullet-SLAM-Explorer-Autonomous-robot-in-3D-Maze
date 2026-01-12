@@ -10,6 +10,11 @@ RIGHT_WHEEL_JOINT_INDEX = 1
 
 MAX_MOTOR_FORCE = 350.0
 
+# --- Physical Dimensions (Estimated for EKF) ---
+# These must match your URDF geometry for Odometry to be accurate!
+WHEEL_RADIUS = 0.05  # meters
+TRACK_WIDTH = 0.3    # meters (distance between wheels)
+
 # --- LiDAR Constants ---
 LIDAR_RAYS = 36
 LIDAR_RANGE = 10.0
@@ -106,23 +111,30 @@ class Robot:
             physicsClientId=self.client
         )
 
-    def get_pose(self):
+    def get_wheel_velocity(self):
         """
-        Returns the robot base (x,y) position and yaw (radians).
+        Simulates Wheel Encoders.
+        Returns the actual angular velocity of (left_wheel, right_wheel) in rad/s.
         """
-        pos, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
-        euler = p.getEulerFromQuaternion(quat)
-        yaw = euler[2]
-        return (pos[0], pos[1]), yaw
+        # getJointState returns: (pos, vel, reaction_forces, applied_torque)
+        left_state = p.getJointState(self.robot_id, LEFT_WHEEL_JOINT_INDEX, physicsClientId=self.client)
+        right_state = p.getJointState(self.robot_id, RIGHT_WHEEL_JOINT_INDEX, physicsClientId=self.client)
+        
+        return left_state[1], right_state[1]
 
-    # -------------------------------------------------------------
-    # LiDAR
-    # -------------------------------------------------------------
+    def get_compass_reading(self):
+        """
+        Simulates a Compass/IMU.
+        Returns current yaw angle. In a real scenario, this would have noise added.
+        """
+        _, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
+        yaw = p.getEulerFromQuaternion(quat)[2]
+        return yaw
+
     def get_lidar_data(self):
         """
         Clean + correct 2D LiDAR using PyBullet ray tests.
         """
-        # Remove old debug lines
         for line_id in self.debug_lines:
             p.removeUserDebugItem(line_id, physicsClientId=self.client)
         self.debug_lines.clear()

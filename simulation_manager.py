@@ -5,11 +5,12 @@ import time
 import matplotlib.pyplot as plt
 
 from maze_generator import MazeGenerator, MAZE_SIZE, CELL_SIZE
-from robot import Robot
+from robot import Robot, WHEEL_RADIUS, TRACK_WIDTH # Import physics constants
 from control_module import ControlModule
 from mapping import Slam
 from perception_module import DuckDetector
 from exploration import FrontierExplorer
+from pose_estimation import EKF
 
 # --- Physics Constants ---
 WALL_RESTITUTION = 0.0
@@ -54,12 +55,20 @@ class SimulationManager:
         self.detector = DuckDetector()
         self.explorer = FrontierExplorer()
         
+        # --- INITIALIZE EKF ---
+        # Get initial ground truth just for seeding the filter
+        _, quat = p.getBasePositionAndOrientation(self.robot.robot_id)
+        start_yaw = p.getEulerFromQuaternion(quat)[2]
+        
+        self.ekf = EKF(self.robot_start_pos, start_yaw, TIME_STEP)
+        
         self.current_state = STATE_EXPLORE
         
         # Track found object location
         self.found_duck_pos = None
         
-        self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker, self.duck_marker = self._setup_plot()
+        # Updated to catch the extra ground truth marker
+        self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker, self.duck_marker, self.gt_marker = self._setup_plot()
         self._setup_camera()
 
     def _load_environment(self):
@@ -97,7 +106,6 @@ class SimulationManager:
 
     def _load_soccer_ball(self):
         """Loads a soccer ball as a distractor object."""
-        # Place soccer ball in a different location (e.g., cell 1, 2)
         ball_x = 1.5 * CELL_SIZE
         ball_y = 3.5 * CELL_SIZE
         ball_z = 0.5
@@ -138,11 +146,17 @@ class SimulationManager:
         
         path_plot, = ax.plot([], [], 'r-', linewidth=0.5, label='Traveled')
         plan_plot, = ax.plot([], [], 'b--', linewidth=1.0, label='Planned')
-        robot_marker, = ax.plot([], [], 'go', markersize=8, label='Robot', markeredgecolor='black')
+        
+        # EKF Estimate (Green Circle)
+        robot_marker, = ax.plot([], [], 'go', markersize=8, label='EKF Est.', markeredgecolor='black')
+        
+        # Ground Truth (Red Cross)
+        gt_marker, = ax.plot([], [], 'rx', markersize=8, label='Ground Truth', markeredgewidth=2)
+        
         duck_marker, = ax.plot([], [], 'y*', markersize=15, label='Duck', markeredgecolor='black')
         
-        ax.legend()
-        return fig, ax, im, path_plot, plan_plot, robot_marker, duck_marker
+        ax.legend(loc='upper right')
+        return fig, ax, im, path_plot, plan_plot, robot_marker, duck_marker, gt_marker
 
     def run_simulation(self):
         steps_perception = 30
@@ -151,14 +165,31 @@ class SimulationManager:
             step_count = 0
             while p.isConnected():
                 
-                # --- SENSORS & SLAM ---
+                # --- SENSORS ---
                 lidar_data = self.robot.get_lidar_data()
                 width, height, camera_rgb = self.robot.get_camera_image()
+                
+                # --- EKF: PREDICTION (ODOMETRY) ---
+                wl, wr = self.robot.get_wheel_velocity()
+                v = (WHEEL_RADIUS / 2.0) * (wl + wr)
+                omega = (WHEEL_RADIUS / TRACK_WIDTH) * (wr - wl)
+                self.ekf.predict(v, omega)
+                
+                # --- EKF: CORRECTION (COMPASS) ---
+                true_yaw = self.robot.get_compass_reading()
+                self.ekf.update_compass(true_yaw)
+                
+                # --- GET ESTIMATED POSE ---
+                est_pose = self.ekf.get_pose()
+                est_x, est_y, est_yaw = est_pose
 
-                pos, quat = p.getBasePositionAndOrientation(self.robot.robot_id)
-                yaw = p.getEulerFromQuaternion(quat)[2]
-                self.slam.update([pos[0], pos[1]], yaw, lidar_data)
-                self.robot_path.append([pos[0], pos[1]])
+                # --- GET GROUND TRUTH POSE (For Visualization Only) ---
+                gt_pos, _ = p.getBasePositionAndOrientation(self.robot.robot_id)
+                gt_x, gt_y = gt_pos[0], gt_pos[1]
+
+                # --- SLAM & MAPPING using ESTIMATED POSE ---
+                self.slam.update([est_x, est_y], est_yaw, lidar_data)
+                self.robot_path.append([est_x, est_y])
 
                 map_probs = self.slam.get_map_probabilities()
                 
@@ -167,9 +198,8 @@ class SimulationManager:
 
                 # 1. STATE EXPLORE
                 if self.current_state == STATE_EXPLORE:
-                    # Drive using frontier explorer
                     left_vel, right_vel = self.explorer.get_control_command(
-                        robot_pose=(pos[0], pos[1], yaw),
+                        robot_pose=(est_x, est_y, est_yaw), 
                         map_probs=map_probs,
                         map_origin=self.slam.origin_m,
                         map_resolution=self.slam.resolution
@@ -205,22 +235,19 @@ class SimulationManager:
                                 # Angle of the ray relative to robot
                                 angle_step = 2 * np.pi / num_rays
                                 ray_angle = closest_ray_idx * angle_step
-                                # Normalize angle (0..2pi -> -pi..pi) if needed, but cos/sin handle it
-                                
-                                dx = pos[0] + min_dist * np.cos(yaw + ray_angle)
-                                dy = pos[1] + min_dist * np.sin(yaw + ray_angle)
+                                dx = est_x + min_dist * np.cos(est_yaw + ray_angle)
+                                dy = est_y + min_dist * np.sin(est_yaw + ray_angle)
                                 self.found_duck_pos = (dx, dy)
                                 print(f"DEBUG: Duck location estimated at [{dx:.2f}, {dy:.2f}] based on LiDAR.")
                             else:
                                 # Fallback if LiDAR didn't catch it (unlikely if camera did)
                                 print("DEBUG: Camera saw duck but LiDAR didn't. Using fallback.")
-                                dx = pos[0] + 0.8 * np.cos(yaw)
-                                dy = pos[1] + 0.8 * np.sin(yaw)
+                                dx = est_x + 0.8 * np.cos(est_yaw)
+                                dy = est_y + 0.8 * np.sin(est_yaw)
                                 self.found_duck_pos = (dx, dy)
                         
                         elif label == "a soccer ball" and conf > 0.6:
-                            print(">>> SOCCER BALL DETECTED! (Ignoring...) <<<")
-                            
+                            print(">>> SOCCER BALL DETECTED! (Ignoring...) <<<")                            
                         elif label == "a teddy bear" and conf > 0.6:
                             print(">>> TEDDY BEAR DETECTED! (Ignoring...) <<<")
 
@@ -241,13 +268,13 @@ class SimulationManager:
                 # 4. STATE RETURN
                 elif self.current_state == STATE_RETURN:
                     left_vel, right_vel = self.explorer.get_control_command(
-                        robot_pose=(pos[0], pos[1], yaw),
+                        robot_pose=(est_x, est_y, est_yaw), 
                         map_probs=map_probs,
                         map_origin=self.slam.origin_m,
                         map_resolution=self.slam.resolution
                     )
                     # print(f"DEBUG: Returning Home - Robot at [{pos[0]:.2f}, {pos[1]:.2f}]")
-                    if pos[0] < 1.6 and pos[1] < 1.6:
+                    if est_x < 1.6 and est_y < 1.6:
                         print("\n>>> MISSION ACCOMPLISHED: ROBOT RETURNED HOME <<<")
                         self.current_state = STATE_FINISHED
 
@@ -271,9 +298,11 @@ class SimulationManager:
                     else:
                         self.plan_plot.set_data([], [])
                     
-                    self.robot_marker.set_data([pos[0]], [pos[1]])
+                    # Update Estimates
+                    self.robot_marker.set_data([est_x], [est_y])
+                    # Update Ground Truth
+                    self.gt_marker.set_data([gt_x], [gt_y])
                     
-                    # Update Duck Marker if found
                     if self.found_duck_pos:
                         self.duck_marker.set_data([self.found_duck_pos[0]], [self.found_duck_pos[1]])
                     
