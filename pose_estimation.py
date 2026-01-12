@@ -1,4 +1,5 @@
 import numpy as np
+import config as cfg
 
 class EKF:
     """
@@ -21,12 +22,12 @@ class EKF:
         # We increase this significantly (especially for theta) because
         # the robot slips/skids in the simulation, making odometry unreliable.
         # [x_var, y_var, theta_var]
-        self.R = np.diag([0.05, 0.05, 0.1]) ** 2 
+        self.R = np.diag(cfg.EKF_PROCESS_NOISE) ** 2 
         
         # Measurement Noise (Q): Uncertainty in Sensor
         # We decrease this because the simulated Compass is nearly perfect.
         # This forces the EKF to snap the heading to the true value.
-        self.Q = np.diag([0.01]) ** 2 
+        self.Q = np.diag(cfg.EKF_MEASUREMENT_NOISE) ** 2 
 
     def predict(self, v, omega):
         """

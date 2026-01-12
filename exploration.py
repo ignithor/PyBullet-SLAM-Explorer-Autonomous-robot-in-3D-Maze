@@ -33,7 +33,7 @@ class FrontierExplorer:
         
         # Safety
         self.safety_margin_cells = 2
-        self.robot_radius_m = 0.45
+        self.robot_radius_m = 0.55
 
         # MODE: 'EXPLORE' or 'RETURN'
         self.mode = 'EXPLORE'
@@ -184,7 +184,8 @@ class FrontierExplorer:
                 goal=self.target_grid, 
                 grid=binary_grid, 
                 resolution=map_resolution, 
-                origin=map_origin
+                origin=map_origin,
+                start_yaw=ryaw
             )
             self.path_index = 0
             self.reset_pid()

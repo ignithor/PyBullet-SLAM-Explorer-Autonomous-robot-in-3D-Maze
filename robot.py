@@ -1,38 +1,7 @@
 import pybullet as p
 import numpy as np
 import os
-
-# --- Robot Constants ---
-ROBOT_URDF_PATH = os.path.join(os.getcwd(), "urdf", "simple_two_wheel_car.urdf")
-
-LEFT_WHEEL_JOINT_INDEX = 0
-RIGHT_WHEEL_JOINT_INDEX = 1
-
-MAX_MOTOR_FORCE = 350.0
-
-# --- Physical Dimensions (Estimated for EKF) ---
-# These must match your URDF geometry for Odometry to be accurate!
-WHEEL_RADIUS = 0.05  # meters
-TRACK_WIDTH = 0.3    # meters (distance between wheels)
-
-# --- LiDAR Constants ---
-LIDAR_RAYS = 36
-LIDAR_RANGE = 10.0
-# Z height of the LiDAR (keep higher than wheel height)
-LIDAR_Z = 0.25
-LIDAR_START_OFFSET = 0.0
-
-# --- Camera Constants ---
-CAMERA_WIDTH = 320  # Width in pixels
-CAMERA_HEIGHT = 240 # Height in pixels
-CAMERA_FOV = 60       # Field of View (degrees)
-CAMERA_ASPECT = CAMERA_WIDTH / CAMERA_HEIGHT
-CAMERA_NEAR = 0.1     # Near clip plane
-CAMERA_FAR = 10.0     # Far clip plane
-# Camera position relative to robot's center (base_link)
-CAMERA_X_OFFSET = 0.0  # Slightly in front
-CAMERA_Z_OFFSET = 0.3   # Above the LiDAR
-
+import config as cfg
 
 class Robot:
     """
@@ -49,23 +18,23 @@ class Robot:
 
         self.robot_id = self._load_robot()
 
-        self.wheel_joints = [LEFT_WHEEL_JOINT_INDEX, RIGHT_WHEEL_JOINT_INDEX]
-        self.LIDAR_MAX_RANGE = 10.0
+        self.wheel_joints = [cfg.LEFT_WHEEL_JOINT_INDEX, cfg.RIGHT_WHEEL_JOINT_INDEX]
+        self.LIDAR_MAX_RANGE = cfg.LIDAR_RANGE
         # Enable simple motor control
         p.setJointMotorControlArray(
             self.robot_id,
             self.wheel_joints,
             p.VELOCITY_CONTROL,
-            forces=[MAX_MOTOR_FORCE, MAX_MOTOR_FORCE],
+            forces=[cfg.MAX_MOTOR_FORCE, cfg.MAX_MOTOR_FORCE],
             physicsClientId=self.client
         )
 
         # Calculate projection matrix (only once)
         self.projection_matrix = p.computeProjectionMatrixFOV(
-            fov=CAMERA_FOV,
-            aspect=CAMERA_ASPECT,
-            nearVal=CAMERA_NEAR,
-            farVal=CAMERA_FAR,
+            fov=cfg.CAMERA_FOV,
+            aspect=cfg.CAMERA_ASPECT,
+            nearVal=cfg.CAMERA_NEAR,
+            farVal=cfg.CAMERA_FAR,
             physicsClientId=self.client
         )
 
@@ -75,11 +44,11 @@ class Robot:
     # Loading
     # -------------------------------------------------------------
     def _load_robot(self):
-        if not os.path.exists(ROBOT_URDF_PATH):
-            raise FileNotFoundError(f"URDF not found: {ROBOT_URDF_PATH}")
+        if not os.path.exists(cfg.ROBOT_URDF_PATH):
+            raise FileNotFoundError(f"URDF not found: {cfg.ROBOT_URDF_PATH}")
 
         return p.loadURDF(
-            ROBOT_URDF_PATH,
+            cfg.ROBOT_URDF_PATH,
             basePosition=self.start_pos,
             baseOrientation=[0, 0, 0, 1],
             useFixedBase=False,
@@ -95,19 +64,19 @@ class Robot:
         """
         p.setJointMotorControl2(
             self.robot_id,
-            LEFT_WHEEL_JOINT_INDEX,
+            cfg.LEFT_WHEEL_JOINT_INDEX,
             p.VELOCITY_CONTROL,
             targetVelocity=left_vel,
-            force=MAX_MOTOR_FORCE,
+            force=cfg.MAX_MOTOR_FORCE,
             physicsClientId=self.client
         )
 
         p.setJointMotorControl2(
             self.robot_id,
-            RIGHT_WHEEL_JOINT_INDEX,
+            cfg.RIGHT_WHEEL_JOINT_INDEX,
             p.VELOCITY_CONTROL,
             targetVelocity=right_vel,
-            force=MAX_MOTOR_FORCE,
+            force=cfg.MAX_MOTOR_FORCE,
             physicsClientId=self.client
         )
 
@@ -117,8 +86,8 @@ class Robot:
         Returns the actual angular velocity of (left_wheel, right_wheel) in rad/s.
         """
         # getJointState returns: (pos, vel, reaction_forces, applied_torque)
-        left_state = p.getJointState(self.robot_id, LEFT_WHEEL_JOINT_INDEX, physicsClientId=self.client)
-        right_state = p.getJointState(self.robot_id, RIGHT_WHEEL_JOINT_INDEX, physicsClientId=self.client)
+        left_state = p.getJointState(self.robot_id, cfg.LEFT_WHEEL_JOINT_INDEX, physicsClientId=self.client)
+        right_state = p.getJointState(self.robot_id, cfg.RIGHT_WHEEL_JOINT_INDEX, physicsClientId=self.client)
         
         return left_state[1], right_state[1]
 
@@ -143,7 +112,7 @@ class Robot:
         pos, quat = p.getBasePositionAndOrientation(self.robot_id, physicsClientId=self.client)
         yaw = p.getEulerFromQuaternion(quat)[2]
 
-        angles = np.linspace(0, 2 * np.pi, LIDAR_RAYS, endpoint=False)
+        angles = np.linspace(0, 2 * np.pi, cfg.LIDAR_RAYS, endpoint=False)
 
         start_points, end_points = [], []
 
@@ -152,15 +121,15 @@ class Robot:
 
             # Start a bit outside the body
             start = [
-                pos[0] + np.cos(world_angle) * LIDAR_START_OFFSET,
-                pos[1] + np.sin(world_angle) * LIDAR_START_OFFSET,
-                LIDAR_Z
+                pos[0],
+                pos[1],
+                cfg.LIDAR_Z
             ]
 
             end = [
-                start[0] + np.cos(world_angle) * LIDAR_RANGE,
-                start[1] + np.sin(world_angle) * LIDAR_RANGE,
-                LIDAR_Z
+                start[0] + np.cos(world_angle) * cfg.LIDAR_RANGE,
+                start[1] + np.sin(world_angle) * cfg.LIDAR_RANGE,
+                cfg.LIDAR_Z
             ]
 
             start_points.append(start)
@@ -177,12 +146,12 @@ class Robot:
 
             if hit_object == -1:
                 # No hit
-                distance = LIDAR_RANGE
+                distance = cfg.LIDAR_RANGE
                 line_end = end_points[i]
                 color = [1, 0, 0] # Red
             else:
                 # Hit
-                distance = hit_fraction * LIDAR_RANGE
+                distance = hit_fraction * cfg.LIDAR_RANGE
                 line_end = hit_position
                 color = [0, 1, 0] # Green
 
@@ -211,11 +180,11 @@ class Robot:
         rot_matrix = np.array(rot_matrix).reshape(3, 3)
 
         # Camera offset (in robot's frame)
-        local_cam_pos = np.array([CAMERA_X_OFFSET, 0, CAMERA_Z_OFFSET])
+        local_cam_pos = np.array([cfg.CAMERA_X_OFFSET, 0, cfg.CAMERA_Z_OFFSET])
         
         # Target point (look straight ahead from camera, in robot's frame)
         # Look 1m in front of the camera
-        local_cam_target = np.array([CAMERA_X_OFFSET + 1.0, 0, CAMERA_Z_OFFSET]) 
+        local_cam_target = np.array([cfg.CAMERA_X_OFFSET + 1.0, 0, cfg.CAMERA_Z_OFFSET]) 
         
         # "Up" vector (in robot's frame, Z-axis)
         local_cam_up = np.array([0, 0, 1])
@@ -236,8 +205,8 @@ class Robot:
 
         # Get the image
         img_data = p.getCameraImage(
-            width=CAMERA_WIDTH,
-            height=CAMERA_HEIGHT,
+            width=cfg.CAMERA_WIDTH,
+            height=cfg.CAMERA_HEIGHT,
             viewMatrix=view_matrix,
             projectionMatrix=self.projection_matrix,
             renderer=p.ER_BULLET_HARDWARE_OPENGL, # Use the main hardware renderer

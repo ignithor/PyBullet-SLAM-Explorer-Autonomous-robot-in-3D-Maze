@@ -1,9 +1,5 @@
 import numpy as np
-
-# --- Constants ---
-# Must match the physical values of the robot
-LIDAR_RANGE = 10.0    # Max Lidar range in meters
-LIDAR_RAYS = 36      # Number of rays (must match robot.py)
+import config as cfg
 
 class Slam:
     """
@@ -47,7 +43,7 @@ class Slam:
         
         # Pre-calculate Lidar angles (0 to 2*Pi) to save time
         # 0° = Robot's right, 90° = Front
-        self.lidar_angles = np.linspace(0, 2 * np.pi, LIDAR_RAYS, endpoint=False)
+        self.lidar_angles = np.linspace(0, 2 * np.pi, cfg.LIDAR_RAYS, endpoint=False)
 
         print(f"INFO: SLAM initialized. Map: {self.size_cells}x{self.size_cells} cells ({map_size_m}x{map_size_m}m).")
         print(f"INFO: Map Origin: {self.origin_m}m (World (0,0) is near bottom-left)")
@@ -91,7 +87,7 @@ class Slam:
             hit_y = robot_y + dist * np.sin(world_angle)
             
             # Check if it's a real detection or just max range (sky)
-            is_max_range = (dist >= LIDAR_RANGE - 0.1)
+            is_max_range = (dist >= cfg.LIDAR_RANGE - 0.1)
 
             # --- Ray Tracing (Geometric Algorithm) ---
             # Traverse the line between robot and hit

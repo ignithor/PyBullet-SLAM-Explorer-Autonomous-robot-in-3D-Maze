@@ -2,6 +2,7 @@ from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 import numpy as np
 import torch
+import config as cfg
 
 class DuckDetector:
     """
@@ -15,7 +16,7 @@ class DuckDetector:
         self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
         
         # Define what we are looking for
-        self.labels = ["a yellow duck", "a wall", "an empty floor", "a soccer ball", "a teddy bear"]
+        self.labels = cfg.DETECTION_LABELS
         print("INFO: CLIP Model loaded successfully.")
 
     def detect(self, rgb_array):
