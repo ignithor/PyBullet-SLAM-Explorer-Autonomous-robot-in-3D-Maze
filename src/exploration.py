@@ -1,5 +1,6 @@
 import numpy as np
 from path_planner import PathPlanner
+import config as cfg
 
 class FrontierExplorer:
     """
@@ -32,8 +33,10 @@ class FrontierExplorer:
         self.integral_angle_err = 0.0
         
         # Safety
-        self.safety_margin_cells = 2
-        self.robot_radius_m = 0.55
+        # MODIFIED: Use config variables instead of hardcoded values
+        # This fixes the issue where changing config had no effect.
+        self.safety_margin_cells = cfg.SAFETY_MARGIN_CELLS
+        self.robot_radius_m = cfg.ROBOT_RADIUS_M
 
         # MODE: 'EXPLORE' or 'RETURN'
         self.mode = 'EXPLORE'
