@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 
 from maze_generator import MazeGenerator
 from robot import Robot
-# from control_module import ControlModule
 from mapping import Slam
 from perception_module import DuckDetector
 from exploration import FrontierExplorer

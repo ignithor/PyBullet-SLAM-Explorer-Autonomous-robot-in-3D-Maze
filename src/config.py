@@ -13,7 +13,7 @@ WALL_HEIGHT = 1.0
 
 # --- Maze Generation ---
 MAZE_SIZE = 5 
-CELL_SIZE = 2.0 
+CELL_SIZE = 3.0 
 
 # --- Robot Physical Properties ---
 # Paths
@@ -30,7 +30,7 @@ MAX_MOTOR_FORCE = 150.0
 # Dimensions (Estimates for Kinematics)
 WHEEL_RADIUS = 0.05
 TRACK_WIDTH = 0.3
-ROBOT_RADIUS_M = 0.45 # For path planning safety
+ROBOT_RADIUS_M = 1.0 # For path planning safety
 
 # --- Sensors ---
 # LiDAR
@@ -46,14 +46,14 @@ CAMERA_FOV = 60
 CAMERA_ASPECT = CAMERA_WIDTH / CAMERA_HEIGHT
 CAMERA_NEAR = 0.1
 CAMERA_FAR = 10.0
-CAMERA_X_OFFSET = 0.15
+CAMERA_X_OFFSET = 0.0
 CAMERA_Z_OFFSET = 0.3
 
 # --- SLAM / Mapping ---
 MAP_RESOLUTION = 0.1
 MAP_SIZE_M = (MAZE_SIZE * CELL_SIZE) + 10.0
 MAP_ORIGIN_OFFSET = -5.0
-MAP_UPDATE_RATE = 150 # Visual update frequency
+MAP_UPDATE_RATE = 50 # Visual update frequency
 
 # Occupancy Grid Probabilities
 LOG_ODDS_HIT = 3.5
@@ -62,7 +62,7 @@ LOG_ODDS_CLAMP = 100.0
 
 # --- Localization (EKF/PF) ---
 # Set to True to use perfect PyBullet coordinates (Debugging).
-USE_PERFECT_POSE = False
+USE_PERFECT_POSE = True
 # Set to True to use Particle Filter, False for EKF
 USE_PARTICLE_FILTER = True
 
