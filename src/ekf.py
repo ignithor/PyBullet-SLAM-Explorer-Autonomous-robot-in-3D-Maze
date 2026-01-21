@@ -27,7 +27,7 @@ class EKF:
         # Measurement Noise (Q): Uncertainty in Sensor
         # We decrease this because the simulated Compass is nearly perfect.
         # This forces the EKF to snap the heading to the true value.
-        self.Q = np.diag(cfg.EKF_MEASUREMENT_NOISE) ** 2 
+        self.Q = np.diag(cfg.EKF_MEASURE_NOISE) ** 2 
 
     def predict(self, v, omega):
         """

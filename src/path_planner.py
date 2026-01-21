@@ -1,5 +1,6 @@
 import numpy as np
 import heapq
+import config as cfg
 
 class PathPlanner:
     """
@@ -69,7 +70,7 @@ class PathPlanner:
         came_from = {} # Maps current_state -> parent_state
         g_score = {start_state: 0}
         
-        max_iterations = 60000 
+        max_iterations = cfg.PATH_PLANNER_MAX_ITERATIONS 
         iterations = 0
         
         final_state = None

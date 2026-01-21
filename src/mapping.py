@@ -13,9 +13,9 @@ class Slam:
     # We use logs to simply add probabilities.
     # > 0 : Likely an obstacle
     # < 0 : Likely free
-    LOG_ODDS_HIT = 0.9    # Value added if the laser hits an obstacle (Bonus)
-    LOG_ODDS_FREE = 0.1   # Value subtracted if the laser passes through the cell (Malus)
-    LOG_ODDS_CLAMP = 20.0 # Min/max value to avoid infinity (clamping)
+    LOG_ODDS_HIT = cfg.LOG_ODDS_HIT    # Value added if the laser hits an obstacle (Bonus)
+    LOG_ODDS_FREE = cfg.LOG_ODDS_FREE   # Value subtracted if the laser passes through the cell (Malus)
+    LOG_ODDS_CLAMP = cfg.LOG_ODDS_CLAMP # Min/max value to avoid infinity (clamping)
 
     def __init__(self, map_size_m=40.0, map_resolution=0.1):
         """

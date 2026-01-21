@@ -11,9 +11,9 @@ class FrontierExplorer:
     """
     def __init__(self):
         # --- Initialize Critical Variables First ---
-        self.lookahead_dist = 1.0     
+        self.lookahead_dist = cfg.LOOKAHEAD_DIST    
         self.target_grid = None 
-        self.reached_threshold_m = 0.4
+        self.reached_threshold_m = cfg.REACHED_THRESHOLD_M
         
         # Path Planner
         self.planner = PathPlanner()
@@ -21,20 +21,18 @@ class FrontierExplorer:
         self.path_index = 0
         
         # PID Control parameters
-        self.max_linear_speed = 30.0   # Reduced max speed for better control
+        self.max_linear_speed = cfg.MAX_LINEAR_SPEED   # Reduced max speed for better control
         
         # PID Gains (Tighter tuning)
-        self.kp_angular = 90.0   
-        self.ki_angular = 0.0  
-        self.kd_angular = 4.0   # High D term to dampen oscillation quickly
+        self.kp_angular = cfg.KP_ANGULAR  
+        self.ki_angular = cfg.KI_ANGULAR 
+        self.kd_angular = cfg.KD_ANGULAR   # High D term to dampen oscillation quickly
         
         # PID State
         self.prev_angle_err = 0.0
         self.integral_angle_err = 0.0
         
         # Safety
-        # MODIFIED: Use config variables instead of hardcoded values
-        # This fixes the issue where changing config had no effect.
         self.safety_margin_cells = cfg.SAFETY_MARGIN_CELLS
         self.robot_radius_m = cfg.ROBOT_RADIUS_M
 
@@ -71,7 +69,7 @@ class FrontierExplorer:
         
         # Ensure lookahead_dist exists (Safety check for reloading issues)
         if not hasattr(self, 'lookahead_dist'):
-            self.lookahead_dist = 1.0
+            self.lookahead_dist = cfg.LOOKAHEAD_DIST 
 
         # --- 0. Stuck Detection & Recovery Logic ---
         # If currently recovering, just backup
