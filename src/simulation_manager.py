@@ -9,9 +9,10 @@ from robot import Robot
 from mapping import Slam
 from perception_module import DuckDetector
 from exploration import FrontierExplorer
-from pose_estimation import EKF
+from ekf import EKF
 from particle_filter import ParticleFilter
 import config as cfg
+from raw_odometry import RawOdometry
 
 
 class SimulationManager:
@@ -48,9 +49,12 @@ class SimulationManager:
         if cfg.USE_PARTICLE_FILTER:
             print("INFO: Initializing Particle Filter...")
             self.estimator = ParticleFilter(self.robot_start_pos, start_yaw, cfg.TIME_STEP, num_particles=100)
-        else:
+        elif cfg.USE_EKF:
             print("INFO: Initializing Extended Kalman Filter (EKF)...")
             self.estimator = EKF(self.robot_start_pos, start_yaw, cfg.TIME_STEP)
+        else:
+            print("INFO: Initializing Raw Odometry...")
+            self.estimator = RawOdometry(self.robot_start_pos, start_yaw, cfg.TIME_STEP)
         
         self.current_state = cfg.STATE_EXPLORE
         
@@ -125,7 +129,12 @@ class SimulationManager:
         plan_plot, = ax.plot([], [], 'b--', linewidth=1.0, label='Planned')
         
         # Estimator Estimate (Green Circle)
-        label_text = 'PF Est.' if cfg.USE_PARTICLE_FILTER else 'EKF Est.'
+        if cfg.USE_PARTICLE_FILTER:
+            label_text = 'PF Est.' 
+        elif cfg.USE_EKF:
+            label_text = 'EKF Est.'
+        else:
+            label_text = 'Est.'
         robot_marker, = ax.plot([], [], 'go', markersize=8, label=label_text, markeredgecolor='black')
         
         # Ground Truth (Red Cross)
@@ -167,16 +176,21 @@ class SimulationManager:
                     v_input = v_wheel
                     omega_input = omega_wheel
 
-                self.estimator.predict(v_input, omega_input)
+                if cfg.USE_PARTICLE_FILTER or cfg.USE_EKF:
+                    self.estimator.predict(v_input, omega_input)
+                    # --- ESTIMATOR: CORRECTION (COMPASS) ---
+                    true_yaw = self.robot.get_compass_reading()
+                    self.estimator.update_compass(true_yaw)
+                else:
+                    self.estimator.update(v_input, omega_input)
                 
-                # --- ESTIMATOR: CORRECTION (COMPASS) ---
-                true_yaw = self.robot.get_compass_reading()
-                self.estimator.update_compass(true_yaw)
                 
                 # --- GET ESTIMATED POSE ---
                 # Handle API differences between EKF and PF
                 if cfg.USE_PARTICLE_FILTER:
                     est_pose = self.estimator.get_estimate()
+                elif cfg.USE_EKF:
+                    est_pose = self.estimator.get_pose()
                 else:
                     est_pose = self.estimator.get_pose()
                 
