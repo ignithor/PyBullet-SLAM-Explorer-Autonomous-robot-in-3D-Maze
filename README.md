@@ -1,69 +1,189 @@
-# PyBullet-SLAM-Explorer-Autonomous-robot-in-3D-Maze
+# Active Semantic SLAM: Autonomous 3D Maze Explorer
 
-This project implements a software simulation of an autonomous mobile robot navigating a procedurally generated 3D maze environment. Built using Python and the PyBullet physics engine, the simulation integrates key concepts in robotics and artificial intelligence, including Simultaneous Localization and Mapping (SLAM), Deep Learning-based Object Recognition, and Sensor Fusion.
+A modular autonomous navigation stack for mobile robots in unknown environments, built from scratch in Python using the PyBullet physics engine.
 
-The robot is equipped with simulated LiDAR and Camera sensors. It builds a real-time 2D occupancy grid map of the unknown environment while simultaneously scanning the visual scene to detect a specific target (a yellow duck) using the CLIP vision-language model.
+This project simulates a differential-drive robot navigating a procedurally generated 3D maze. The robot starts with no prior map, autonomously explores to build an occupancy grid, detects semantic targets via a vision-language model (CLIP), and plans a kinematically feasible path to return to its starting point.
 
-## Features
+---
 
-- 3D Physics Simulation: Realistic differential-drive robot dynamics and collision detection using PyBullet.
+## Key Features
 
-- Procedural Environment: Dynamic generation of "perfect" mazes (no loops) of variable sizes using the Recursive Backtracking algorithm.
+### Autonomous Navigation Stack
 
-- Lidar-based SLAM: Implementation of Occupancy Grid Mapping with Log-Odds probabilistic updates to construct a reliable map from noisy sensor data.
+- **Active Exploration**
+  - Frontier-based exploration strategy
+  - Nearest-frontier heuristic to maximize information gain
 
-- AI Perception: Integration of OpenAI's CLIP model for zero-shot object detection (detecting "a yellow duck" vs "a wall").
+- **Directional Path Planning**
+  - Custom Directional A* (Hybrid A* Lite) in state space \((x, y, theta)\)
+  - Generates smooth, drivable “U-curves”
+  - Respects non-holonomic constraints of a differential-drive robot
 
-- Modular Architecture: Clean separation of concerns with distinct modules for robot control, mapping, perception, and simulation management.
+- **Adaptive Control**
+  - Pure Pursuit controller for path following
+  - PID angular velocity controller
+  - Dynamic lookahead for stable tracking at higher speeds
 
-- Real-time Visualization: Live plotting of the SLAM map and robot trajectory using Matplotlib.
+### Probabilistic Localization (Hybrid)
 
-- Manual Control: GUI-based slider control for human-in-the-loop testing and data gathering.
+- **Particle Filter (MCL)**
+  - Monte Carlo Localization with ~100 particles
+  - Robust to non-Gaussian errors (e.g., collisions)
 
+- **Extended Kalman Filter (EKF)**
+  - Fuses wheel odometry with PF estimate
+  - Produces a smooth, low-noise pose for control
 
-## Run the code 
+- **Fault Tolerance**
+  - Simulated IMU-based stuck detection
+  - Blind recovery maneuvers when wedged against obstacles
 
-To start the simulation do 
+### Semantic Perception
 
-```python main.py```
+- **Zero-Shot Detection (CLIP)**
+  - Vision-language model for natural-language prompts  
+    Examples: `"a yellow duck"`, `"a soccer ball"`, `"a teddy bear"`
 
-## Controls
+- **Sensor Fusion**
+  - 2D camera detections fused with LiDAR rays
+  - Estimates 3D metric coordinates of detected objects on the occupancy map
 
-Once the simulation starts, two windows will appear:
+### Mapping & Simulation
 
-- PyBullet GUI: Shows the 3D robot and maze.
+- **LiDAR-based SLAM**
+  - Custom occupancy grid mapping with log-odds updates
+  - Tuned “sticky walls” parameters to reduce map flicker at long range
 
-  Use the sliders on the side (or press F1 to toggle the menu) labelled "Left Wheel Vel" and "Right Wheel Vel" to drive the robot manually.
+- **Procedural Environments**
+  - Perfect mazes (no loops) of arbitrary size
+  - Generated with Recursive Backtracking
 
-- Matplotlib Window: Shows the live generated map.
+---
 
-  White: Free space.
+## Installation & Dependencies
 
-  Black: Walls/Obstacles.
+### Requirements
 
-  Gray: Unknown area.
+- Python **3.8+**
+- Recommended: virtual environment (e.g. `venv`, `conda`)
 
-## Object Detection
+### 1. Clone the Repository
 
-Drive the robot around the maze. Every 5 seconds, the system captures an image and analyzes it. If the robot faces the target object (the yellow duck), the terminal will output:
+```bash
+git clone https://github.com/ignithor/PyBullet-SLAM-Explorer-Autonomous-robot-in-3D-Maze
+cd PyBullet-SLAM-Explorer-Autonomous-robot-in-3D-Maze
+```
 
- DUCK DETECTED!
+### 2. Install Required Packages
 
+```bash
+# Core physics & math
+pip install pybullet numpy matplotlib scipy
 
-## Dependencies
+# Computer vision & AI
+pip install opencv-contrib-python torch torchvision transformers pillow
+```
 
-Tested with Python version 3.13.9
+(You may need a compatible version of PyTorch for your OS/CUDA setup; refer to the official PyTorch installation guide if necessary.)
 
-pip install pybullet # pybullet-3.2.7
+---
 
-conda install numpy
+## How to Run
 
-conda install matplotlib
+Start the full autonomous mission:
 
-pip install opencv-contrib-python 
+```bash
+python src/main.py
+```
 
-pip install scipy 
+---
 
-pip install ffmpeg-python 
+## What You Will See
 
-pip install transformers pillow pytorch
+### PyBullet Window (3D Simulation)
+
+- Robot model in a 3D maze
+- Maze walls (blue)
+- Objects (Duck, Ball, Bear) placed in the environment
+
+### Matplotlib Window (Mapping View)
+
+- Live **occupancy grid map**
+- **Green circle**: Estimated robot pose (PF or EKF)
+- **Red cross**: Ground-truth robot pose
+- **Yellow star**: Detected target location
+- **Blue line**: Current planned path
+
+---
+
+## Mission Logic (Finite State Machine)
+
+The robot autonomously transitions through:
+
+1. **EXPLORE**  
+   - Frontier-based exploration to map unknown space.
+
+2. **STOP & IDENTIFY**  
+   - Robot stops when CLIP confirms the target (e.g., yellow duck).
+
+3. **PLAN**  
+   - Computes the shortest A* path back to the origin \((0, 0)\).
+
+4. **RETURN**  
+   - Follows the planned path to return home.
+
+---
+
+## Configuration (`config.py`)
+
+All hyperparameters are centralized in `config.py`. Common options:
+
+- `USE_EKF` or `USE_PF`
+  - `True`: Use Particle Filter or EKF
+  - `False`: Use raw odometry (to visualize drift)
+
+- `USE_PERFECT_POSE`
+  - `True`: Use “God mode” ground-truth pose (useful for debugging logic)
+  - `False`: Use estimated pose
+
+- `ROBOT_RADIUS_M`
+  - Safety margin for the planner (increases distance from walls)
+
+- `MAX_LINEAR_SPEED`
+  - Maximum forward speed of the robot
+
+- `MAP_UPDATE_RATE`
+  - Frequency of map plotting (higher = faster visual updates)
+
+Adjust these values to experiment with different navigation, mapping, and localization behaviors.
+
+---
+
+## Project Structure
+
+- `simulation_manager.py`  
+  Main orchestrator: synchronizes physics, sensors, mapping, and mission logic.
+
+- `exploration.py`  
+  Finite State Machine, frontier detection, and path-following logic.
+
+- `path_planner.py`  
+  Directional A* (Hybrid A* Lite) implementation.
+
+- `particle_filter.py` & `ekf.py`  
+  Particle Filter and EKF localization modules.
+
+- `slam.py`  
+  Occupancy grid mapping with log-odds updates.
+
+- `perception_module.py`  
+  CLIP-based semantic perception and vision-language interface.
+
+- `config.py`  
+  Global configuration and hyperparameters.
+
+---
+
+## Author
+
+- Paul Keyvan Hoang-Long Pham Dang
