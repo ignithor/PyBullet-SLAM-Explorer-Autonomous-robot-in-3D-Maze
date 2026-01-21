@@ -30,7 +30,7 @@ MAX_MOTOR_FORCE = 150.0
 # Dimensions (Estimates for Kinematics)
 WHEEL_RADIUS = 0.05
 TRACK_WIDTH = 0.3
-ROBOT_RADIUS_M = 1.0 # For path planning safety
+ROBOT_RADIUS_M = 0.8 # For path planning safety
 
 # --- Sensors ---
 # LiDAR
@@ -56,15 +56,16 @@ MAP_ORIGIN_OFFSET = -5.0
 MAP_UPDATE_RATE = 50 # Visual update frequency
 
 # Occupancy Grid Probabilities
-LOG_ODDS_HIT = 3.5
-LOG_ODDS_FREE = 0.05
-LOG_ODDS_CLAMP = 100.0
+LOG_ODDS_HIT = 0.9
+LOG_ODDS_FREE = 0.1
+LOG_ODDS_CLAMP = 20.0
 
 # --- Localization (EKF/PF) ---
 # Set to True to use perfect PyBullet coordinates (Debugging).
 USE_PERFECT_POSE = True
 # Set to True to use Particle Filter, False for EKF
-USE_PARTICLE_FILTER = True
+USE_PARTICLE_FILTER = False
+USE_EKF = False
 
 # EKF Settings
 EKF_PROCESS_NOISE = [0.05, 0.05, 0.1] # x, y, theta std dev
@@ -80,6 +81,7 @@ MAX_LINEAR_SPEED = 25.0
 LOOKAHEAD_DIST = 1.0
 REACHED_THRESHOLD_M = 0.4
 SAFETY_MARGIN_CELLS = 2
+PATH_PLANNER_MAX_ITERATIONS = 100000
 
 # Stuck Recovery
 STUCK_CHECK_INTERVAL = 50
@@ -87,9 +89,9 @@ STUCK_DIST_THRESHOLD = 0.1
 RECOVERY_DURATION = 40
 
 # PID Gains
-KP_ANGULAR = 6.0
-KI_ANGULAR = 0.01
-KD_ANGULAR = 1.0
+KP_ANGULAR = 90.0
+KI_ANGULAR = 0.0
+KD_ANGULAR = 4.0
 
 # --- Perception ---
 CLIP_MODEL_ID = "openai/clip-vit-base-patch32"
@@ -105,6 +107,9 @@ STATE_RETURN = 3
 STATE_FINISHED = 4
 
 # --- Objects positions ---
-DUCK_POSITION = [1.5 * CELL_SIZE, 2.5 * CELL_SIZE, 0.3]
+# Test Positions
+# DUCK_POSITION = [1.5 * CELL_SIZE, 1.0 * CELL_SIZE, 0.3]
+
+DUCK_POSITION = [3.5 * CELL_SIZE, 2.5 * CELL_SIZE, 0.3]
 SOCCER_BALL_POSITION = [1.5 * CELL_SIZE, 3.5 * CELL_SIZE, 0.5]
 TEDDY_BEAR_POSITION = [2.3 * CELL_SIZE, 0.5 * CELL_SIZE, 0.0]
