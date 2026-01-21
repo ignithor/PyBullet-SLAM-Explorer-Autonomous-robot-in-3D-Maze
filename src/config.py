@@ -62,10 +62,12 @@ LOG_ODDS_CLAMP = 20.0
 
 # --- Localization (EKF/PF) ---
 # Set to True to use perfect PyBullet coordinates (Debugging).
-USE_PERFECT_POSE = True
-# Set to True to use Particle Filter, False for EKF
+USE_PERFECT_POSE = False
+# Set to True to use Particle Filter
 USE_PARTICLE_FILTER = False
-USE_EKF = False
+# Set to True to use EKF
+USE_EKF = True
+# If both are False, raw odometry is used.
 
 # EKF Settings
 EKF_PROCESS_NOISE = [0.05, 0.05, 0.1] # x, y, theta std dev
@@ -97,7 +99,7 @@ KD_ANGULAR = 4.0
 CLIP_MODEL_ID = "openai/clip-vit-base-patch32"
 DETECTION_LABELS = ["a yellow duck", "a soccer ball", "a teddy bear", "a wall", "an empty floor", "a robot"]
 DETECTION_CONFIDENCE_THRESHOLD = 0.6
-PERCEPTION_INTERVAL_STEPS = int(5.0 / TIME_STEP)
+PERCEPTION_INTERVAL_STEPS = int(0.5 / TIME_STEP)
 
 # --- State Machine States ---
 STATE_EXPLORE = 0
