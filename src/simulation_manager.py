@@ -64,6 +64,11 @@ class SimulationManager:
         # Updated to catch the extra ground truth marker
         self.fig, self.ax, self.im, self.path_plot, self.plan_plot, self.robot_marker, self.duck_marker, self.gt_marker = self._setup_plot()
         self._setup_camera()
+        
+        # --- METRICS VARIABLES ---
+        self.total_pos_error = 0.0
+        self.error_samples = 0
+        self.metrics_printed = False
 
     def _load_environment(self):
         plane_id = p.loadURDF("plane.urdf", physicsClientId=self.client)
@@ -146,8 +151,9 @@ class SimulationManager:
         return fig, ax, im, path_plot, plan_plot, robot_marker, duck_marker, gt_marker
 
     def run_simulation(self):
-        steps_perception = 30
-        
+        steps_perception = cfg.PERCEPTION_INTERVAL_STEPS
+        steps_20_sec = int(20.0 / cfg.TIME_STEP)
+
         try:
             step_count = 0
             while p.isConnected():
@@ -200,6 +206,16 @@ class SimulationManager:
                 gt_pos, gt_quat = p.getBasePositionAndOrientation(self.robot.robot_id)
                 gt_x, gt_y = gt_pos[0], gt_pos[1]
                 gt_yaw = p.getEulerFromQuaternion(gt_quat)[2]
+                
+                # --- METRICS CALCULATION ---
+                if step_count < steps_20_sec:
+                    current_error = np.hypot(est_x - gt_x, est_y - gt_y)
+                    self.total_pos_error += current_error
+                    self.error_samples += 1
+                elif not self.metrics_printed:
+                    avg_error = self.total_pos_error / self.error_samples
+                    print(f"\n[METRICS] Average Position Error (First 20s): {avg_error:.4f} m")
+                    self.metrics_printed = True
                 
                 # Select which one to use for SLAM and Control
                 if cfg.USE_PERFECT_POSE:
