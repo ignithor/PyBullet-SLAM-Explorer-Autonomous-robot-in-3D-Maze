@@ -24,14 +24,14 @@ This project simulates a differential-drive robot navigating a procedurally gene
   - PID angular velocity controller
   - Dynamic lookahead for stable tracking at higher speeds
 
-### Probabilistic Localization (Hybrid)
+### Probabilistic Localization
 
 - **Particle Filter (MCL)**
   - Monte Carlo Localization with ~100 particles
   - Robust to non-Gaussian errors (e.g., collisions)
 
 - **Extended Kalman Filter (EKF)**
-  - Fuses wheel odometry with PF estimate
+  - Uses wheel odometry
   - Produces a smooth, low-noise pose for control
 
 - **Fault Tolerance**
