@@ -102,11 +102,21 @@ python src/main.py
 
 ### PyBullet Window (3D Simulation)
 
-- Robot model in a 3D maze
+![3D maze](images/3D_maze.png)
+
 - Maze walls (blue)
 - Objects (Duck, Ball, Bear) placed in the environment
+- Robot model in a 3D maze
+
+![Robot](images/mobile_robot_sensor_en.png)
+
+
+
 
 ### Matplotlib Window (Mapping View)
+
+![Example of final map](images/map_final.png)
+
 
 - Live **occupancy grid map**
 - **Green circle**: Estimated robot pose (PF or EKF)
@@ -184,6 +194,14 @@ Adjust these values to experiment with different navigation, mapping, and locali
 
 ---
 
+
 ## Author
 
 - Paul Keyvan Hoang-Long Pham Dang
+
+--- 
+
+Read the [assignment report](CS_ex_Paul_Pham_Dang_report.pdf) for more details.
+
+
+
